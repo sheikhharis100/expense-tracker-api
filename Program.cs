@@ -3,11 +3,20 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Npgsql;
 using System.Text;
 using ExpenseTracker.Api.Data;
 using ExpenseTracker.Api.Services;
 
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
+
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
 
 builder.Services.AddControllers();
 
@@ -36,7 +45,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(NormalizeConnectionString(builder.Configuration.GetConnectionString("DefaultConnection")!)));
 
 builder.Services.AddAuthentication(options =>
 {
@@ -94,3 +103,24 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static string NormalizeConnectionString(string raw)
+{
+    if (!raw.StartsWith("postgres://") && !raw.StartsWith("postgresql://"))
+        return raw;
+
+    var uri = new Uri(raw);
+    var userInfo = uri.UserInfo.Split(':', 2);
+
+    var builder = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Username = Uri.UnescapeDataString(userInfo[0]),
+        Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty,
+        Database = uri.AbsolutePath.TrimStart('/'),
+        SslMode = SslMode.Require
+    };
+
+    return builder.ToString();
+}

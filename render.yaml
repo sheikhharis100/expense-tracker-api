@@ -1,0 +1,37 @@
+databases:
+  - name: expensetracker-db
+    plan: free
+    databaseName: expensetrackerdb
+    user: expensetracker
+
+services:
+  - type: web
+    name: expense-tracker-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ConnectionStrings__DefaultConnection
+        fromDatabase:
+          name: expensetracker-db
+          property: connectionString
+      - key: Jwt__Key
+        generateValue: true
+      - key: Jwt__Issuer
+        value: ExpenseTracker.Api
+      - key: Jwt__Audience
+        value: ExpenseTracker.Client
+      - key: Jwt__ExpiryMinutes
+        value: "60"
+      - key: BudgetAlerts__WarningThresholdPercent
+        value: "80"
+      - key: CurrencyRates__ReportingCurrency
+        value: USD
+      - key: CurrencyRates__Rates__USD
+        value: "1.0"
+      - key: CurrencyRates__Rates__PKR
+        value: "0.0036"
+      - key: CurrencyRates__Rates__EUR
+        value: "1.08"
