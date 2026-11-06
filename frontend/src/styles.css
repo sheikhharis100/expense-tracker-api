@@ -1130,6 +1130,66 @@ kbd {
   box-shadow: 0 18px 44px rgba(190, 18, 60, 0.3);
 }
 
+/* Salary is due but not recorded: not an alarm, a to-do. */
+.health-salary {
+  background: linear-gradient(130deg, #1e3a8a 0%, #1d4ed8 45%, #0e7490 100%);
+  box-shadow: 0 18px 44px rgba(29, 78, 216, 0.3);
+}
+
+.hero-action {
+  display: inline-flex;
+  align-self: flex-start;
+  width: fit-content;
+  align-items: center;
+  text-decoration: none;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  color: #0b1220;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+.hero-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.hero-action:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* The whole banner opens its breakdown; buttons inside it keep working on their own. */
+.hero-open {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+.hero-open:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: -6px;
+}
+
+.hero-card > :not(.hero-open) {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.hero-card .hero-action {
+  pointer-events: auto;
+}
+
 .health-empty,
 .health-plan {
   background: linear-gradient(130deg, #312e81 0%, #4338ca 45%, #155e75 100%);
@@ -1319,6 +1379,188 @@ kbd {
 .tile-hint {
   font-size: 12px;
   color: var(--ink-muted);
+}
+
+/* A tile that opens its breakdown: the label's button covers the whole tile (stretched link). */
+.tile-openable {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.tile-openable:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--border));
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--tone) 18%, transparent);
+}
+
+.tile-openable:has(.tile-open:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--tone) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.tile-open {
+  all: unset;
+  cursor: pointer;
+}
+
+.tile-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.tile-chevron {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  color: var(--ink-muted);
+  opacity: 0.55;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.tile-openable:hover .tile-chevron {
+  opacity: 1;
+  transform: translateX(2px);
+  color: var(--tone);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-openable,
+  .tile-chevron {
+    transition: none;
+  }
+
+  .tile-openable:hover {
+    transform: none;
+  }
+}
+
+/* Breakdown panels opened from the Summary figures. */
+.kpi-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.kpi-detail .kv-table {
+  margin: 0;
+}
+
+.kpi-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--grid);
+}
+
+.kpi-list > li:last-child {
+  border-bottom: 0;
+}
+
+.kpi-list-link {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -10px -2px;
+  padding: 10px 2px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 10px;
+}
+
+.kpi-list-link:hover {
+  background: var(--surface-2);
+}
+
+.kpi-list-link > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.kpi-list-link .num {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.kpi-list-link .num .muted {
+  display: inline-block;
+  min-width: 52px;
+  margin-left: 10px;
+  text-align: right;
+}
+
+.kpi-chevron {
+  flex: none;
+  color: var(--ink-muted);
+}
+
+.kpi-budget {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.kpi-days > li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+}
+
+.kpi-day-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.kpi-day-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+}
+
+.kpi-actions {
+  padding-top: 4px;
+}
+
+/* A category name in a table that opens its entries. */
+.row-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.row-link:hover {
+  color: var(--brand-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.statement .row-action td {
+  padding-top: 8px;
+  padding-bottom: 10px;
+  border-bottom: 0;
+}
+
+.highest .kpi-list-link,
+.ranked .kpi-list-link {
+  margin: 0;
+  padding: 4px 6px;
 }
 
 .tile-income {

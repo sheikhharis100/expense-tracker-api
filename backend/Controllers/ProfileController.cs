@@ -85,6 +85,7 @@ public class ProfileController : AppController
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
         user.SessionVersion++;
         await _context.SaveChangesAsync();
+        SessionTokens.Forget(user.Id);
         // An older reset or sign-in link mustn't undo this.
         await _tokens.RevokeAsync(user.Id, AuthTokenPurpose.Reset, AuthTokenPurpose.Login);
 
@@ -145,6 +146,7 @@ public class ProfileController : AppController
         var user = await CurrentUserAsync();
         user.SessionVersion++;
         await _context.SaveChangesAsync();
+        SessionTokens.Forget(user.Id);
         await _notifier.NotifyAsync(user.Id, LedgerScopes.Session);
         return Ok(_sessions.Issue(user));
     }
@@ -167,6 +169,7 @@ public class ProfileController : AppController
         await _context.RecurringItems.Where(r => r.UserId == user.Id).ExecuteDeleteAsync();
         await _context.Users.Where(u => u.Id == user.Id).ExecuteDeleteAsync();
         await transaction.CommitAsync();
+        SessionTokens.Forget(user.Id);
         return NoContent();
     }
 

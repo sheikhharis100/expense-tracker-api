@@ -17,6 +17,27 @@ const cat = (name: string, isOverBudget: boolean) => ({
 });
 
 describe('monthHealth', () => {
+  it("says the salary isn't recorded instead of overspent when that's the only reason", () => {
+    // The user's November: 60,500 salary expected but not marked received, 14,920 spent.
+    const h = monthHealth({ ...base, availableFunds: 0, receivedIncome: 0, netSpending: 14920, remainingBalance: -14920, deficit: 14920, salaryOutstanding: 60500 });
+    expect(h.level).toBe('salary');
+    expect(h.message).toContain('45,580');
+  });
+
+  it('still says overspent when even the salary due would not cover it', () => {
+    const h = monthHealth({ ...base, availableFunds: 0, receivedIncome: 0, netSpending: 70000, remainingBalance: -70000, deficit: 70000, salaryOutstanding: 60500 });
+    expect(h.level).toBe('over');
+    expect(h.message).toContain('9,500');
+  });
+
+  it('prompts to record a salary that is due before anything is spent', () => {
+    expect(monthHealth({ ...base, availableFunds: 0, receivedIncome: 0, netSpending: 0, remainingBalance: 0, salaryOutstanding: 55000 }).level).toBe('salary');
+  });
+
+  it('ignores salary due in a future month', () => {
+    expect(monthHealth({ ...base, timing: 'future', netSpending: 0, salaryOutstanding: 55000 }).level).toBe('plan');
+  });
+
   it('is healthy with money left and no broken budgets', () => {
     const h = monthHealth(base);
     expect(h.level).toBe('healthy');

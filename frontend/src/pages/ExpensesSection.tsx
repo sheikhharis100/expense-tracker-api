@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { newRequestId, useCategories, useCreateExpense, useDeleteExpense, useExpenses, useMatrix, usePatchExpense, useSaveLayout, useSetNote } from '../api/hooks';
 import type { Column, ExpenseFilter, ExpenseList, ExpenseRow, LedgerTotals, Matrix, MatrixCell, MatrixDay } from '../api/types';
 import { ColumnHeader } from '../components/ColumnEditor';
@@ -20,14 +21,33 @@ import { checkCustomValue, checkDate, checkText, firstError, LIMITS, MAX_DATE } 
 
 const VIEW_KEY = 'expense-tracker.expense-view';
 
+// Links from the Summary open a view with filters set: ?view=ledger&category=3&status=Planned&additional=1.
+function linkedFilter(params: URLSearchParams): Partial<ExpenseFilter> {
+  const filter: Partial<ExpenseFilter> = {};
+  const category = Number(params.get('category'));
+  if (Number.isInteger(category) && category > 0) filter.categoryId = category;
+  const status = params.get('status');
+  if (status === 'Paid' || status === 'Planned') filter.status = status;
+  if (params.get('additional') === '1') filter.additional = true;
+  return filter;
+}
+
 export function ExpensesSection() {
+  const [params] = useSearchParams();
+  const linkedView = params.get('view');
+  const linked = useMemo(() => linkedFilter(params), [params]);
   const [view, setView] = useState<'matrix' | 'ledger'>(() => {
+    if (linkedView === 'matrix' || linkedView === 'ledger') return linkedView;
     try {
       return localStorage.getItem(VIEW_KEY) === 'ledger' ? 'ledger' : 'matrix';
     } catch {
       return 'matrix';
     }
   });
+  // Following another link while already here switches the view too.
+  useEffect(() => {
+    if (linkedView === 'matrix' || linkedView === 'ledger') setView(linkedView);
+  }, [linkedView, params]);
   const choose = (v: 'matrix' | 'ledger') => {
     setView(v);
     try {
@@ -53,7 +73,7 @@ export function ExpensesSection() {
       >
         Expenses
       </SectionTitle>
-      {view === 'matrix' ? <MatrixView /> : <LedgerView />}
+      {view === 'matrix' ? <MatrixView /> : <LedgerView key={params.toString()} initial={linked} />}
     </div>
   );
 }
@@ -81,11 +101,12 @@ const SORTS = [
   { value: 'status', label: 'Status' },
 ];
 
-function LedgerView({ fixed }: { fixed?: Partial<ExpenseFilter> }) {
+function LedgerView({ fixed, initial }: { fixed?: Partial<ExpenseFilter>; initial?: Partial<ExpenseFilter> }) {
   const { ym, me } = useWorkspace();
   const categories = useCategories();
-  const [filter, setFilter] = useState<ExpenseFilter>({ sort: 'date', dir: 'asc' });
-  const [showFilters, setShowFilters] = useState(false);
+  const [filter, setFilter] = useState<ExpenseFilter>({ sort: 'date', dir: 'asc', ...initial });
+  // Filters that came with a link are shown, so it's clear why the list is shorter.
+  const [showFilters, setShowFilters] = useState(() => Object.keys(initial ?? {}).length > 0);
   const [editing, setEditing] = useState<ExpenseRow | 'new' | null>(null);
   const [managing, setManaging] = useState(false);
   // Bad or reversed dates aren't sent (the server would refuse them); the field says why instead.

@@ -7,6 +7,7 @@ import { Donut } from '../components/Donut';
 import { Icon, type IconName } from '../components/Icon';
 import { Meter } from '../components/Meter';
 import { SectionTitle, useWorkspace } from '../components/Workspace';
+import { KpiSheet, ledgerLink, Row, type Kpi } from './SummaryDetails';
 import { useSeriesColor } from '../lib/colors';
 import { dayLabel, ymLabel } from '../lib/dates';
 import { money, notSet, orNA, percent, signed, signedChange } from '../lib/format';
@@ -31,10 +32,16 @@ export function SummarySection() {
 function SummaryBody({ s }: { s: MonthSummary }) {
   const f = s.figures;
   const health = monthHealth(f);
+  const [kpi, setKpi] = useState<Kpi | null>(null);
+  const showStatement = () => {
+    setKpi(null);
+    document.getElementById('statement')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   return (
     <>
-      <HealthHero f={f} currency={s.currency} health={health} />
-      <KeyTiles f={f} />
+      <HealthHero f={f} currency={s.currency} health={health} onOpen={setKpi} />
+      <KeyTiles f={f} onOpen={setKpi} />
+      {kpi && <KpiSheet kpi={kpi} f={f} onClose={() => setKpi(null)} onShowStatement={showStatement} />}
       <div className="grid-2">
         <Statement f={f} currency={s.currency} />
         <div className="stack">
@@ -55,14 +62,26 @@ function SummaryBody({ s }: { s: MonthSummary }) {
 
 // ---------- Hero ----------
 
-const HEALTH_ICON: Record<MonthHealth['level'], IconName> = { healthy: 'shield', watch: 'flame', over: 'alert', empty: 'sparkle', plan: 'calendar' };
+const HEALTH_ICON: Record<MonthHealth['level'], IconName> = { healthy: 'shield', watch: 'flame', over: 'alert', empty: 'sparkle', plan: 'calendar', salary: 'wallet' };
 
-function HealthHero({ f, currency, health }: { f: MonthFigures; currency: string; health: MonthHealth }) {
+// The salary that's due but not recorded yet: "Mark as received" opens that salary's payment form.
+function MarkReceived({ f, className = 'hero-action' }: { f: MonthFigures; className?: string }) {
+  const due = f.timing === 'future' ? undefined : f.fundingSalaries.find((s) => s.outstanding > 0);
+  if (!due) return null;
+  return (
+    <Link to={`income?pay=${due.earned}`} className={className}>
+      <Icon name="check" size={16} /> Mark {ymLabel(due.earned)} salary as received
+    </Link>
+  );
+}
+
+function HealthHero({ f, currency, health, onOpen }: { f: MonthFigures; currency: string; health: MonthHealth; onOpen: (k: Kpi) => void }) {
   const used = f.availableFunds > 0 ? Math.min(100, (f.netSpending / f.availableFunds) * 100) : 0;
   const r = 58;
   const c = 2 * Math.PI * r;
   return (
     <section className={`hero-card health-${health.level}`}>
+      <button type="button" className="hero-open" onClick={() => onOpen('balance')} aria-label="How the remaining balance is worked out" />
       <div className="hero-main">
         <p className="hero-eyebrow">Remaining balance</p>
         <p className="hero-value">
@@ -82,6 +101,7 @@ function HealthHero({ f, currency, health }: { f: MonthFigures; currency: string
           </span>
           <span className="health-message">{health.message}</span>
         </div>
+        <MarkReceived f={f} />
       </div>
       <div className="health-ring" aria-hidden="true">
         <svg viewBox="0 0 140 140" width="140" height="140">
@@ -97,33 +117,69 @@ function HealthHero({ f, currency, health }: { f: MonthFigures; currency: string
   );
 }
 
-function KeyTiles({ f }: { f: MonthFigures }) {
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function KeyTiles({ f, onOpen }: { f: MonthFigures; onOpen: (k: Kpi) => void }) {
   return (
     <dl className="tiles">
-      <Tile icon="income" tone="income" label="Received income" value={money(f.receivedIncome)} hint={`salary ${money(f.salaryIncome)} · other ${money(f.otherIncome)}`} />
-      <Tile icon="spent" tone="spent" label="Net spending" value={money(f.netSpending)} hint={f.refunds ? `after ${money(f.refunds)} refunds` : `${f.daysWithSpending} days with spending`} />
-      <Tile icon="pulse" tone="avg" label="Average per day" value={orNA(f.averageDailySpending, (v) => money(Math.round(v)))} hint={f.elapsedDays ? `over ${f.elapsedDays} days` : 'not started'} />
       <Tile
+        kpi="income"
+        onOpen={onOpen}
+        icon="income"
+        tone="income"
+        label="Received income"
+        value={money(f.receivedIncome)}
+        hint={f.salaryOutstanding > 0 && f.timing !== 'future' ? `${money(f.salaryOutstanding)} salary not recorded yet` : `salary ${money(f.salaryIncome)} · other ${money(f.otherIncome)}`}
+      />
+      <Tile kpi="spending" onOpen={onOpen} icon="spent" tone="spent" label="Net spending" value={money(f.netSpending)} hint={f.refunds ? `after ${money(f.refunds)} refunds` : `${plural(f.daysWithSpending, 'day')} with spending`} />
+      <Tile kpi="average" onOpen={onOpen} icon="pulse" tone="avg" label="Average per day" value={orNA(f.averageDailySpending, (v) => money(Math.round(v)))} hint={f.elapsedDays ? `over ${plural(f.elapsedDays, 'day')}` : 'not started'} />
+      <Tile
+        kpi="allowance"
+        onOpen={onOpen}
         icon="coins"
         tone="safe"
         label={f.timing === 'current' ? 'Daily allowance' : 'Surplus / deficit'}
         value={f.timing === 'current' ? orNA(f.dailyAllowance, (v) => money(Math.floor(v), { dash: false })) : signed(f.surplus, { dash: false })}
-        hint={f.timing === 'current' ? `${f.remainingDaysIncludingToday} days left incl. today` : 'income − net spending'}
+        hint={f.timing === 'current' ? `${plural(f.remainingDaysIncludingToday ?? 0, 'day')} left incl. today` : 'income − net spending'}
         negative={f.timing !== 'current' && f.surplus < 0}
       />
-      <Tile icon="target" tone="budget" label="Budget remaining" value={notSet(f.overallBudgetRemaining)} hint={f.totalBudget == null ? 'no budgets set' : `of ${money(f.totalBudget)}`} negative={(f.overallBudgetRemaining ?? 0) < 0} />
-      <Tile icon="calendar" tone="days" label="Planned, unpaid" value={money(f.unpaidCommitments)} hint={`${f.commitments.length} item${f.commitments.length === 1 ? '' : 's'} this month`} />
+      <Tile kpi="budget" onOpen={onOpen} icon="target" tone="budget" label="Budget remaining" value={notSet(f.overallBudgetRemaining)} hint={f.totalBudget == null ? 'no budgets set' : `of ${money(f.totalBudget)}`} negative={(f.overallBudgetRemaining ?? 0) < 0} />
+      <Tile kpi="planned" onOpen={onOpen} icon="calendar" tone="days" label="Planned, unpaid" value={money(f.unpaidCommitments)} hint={`${plural(f.commitments.length, 'item')} this month`} />
     </dl>
   );
 }
 
-function Tile({ icon, tone, label, value, hint, negative }: { icon: IconName; tone: string; label: string; value: string; hint?: string; negative?: boolean }) {
+function Tile({
+  kpi,
+  onOpen,
+  icon,
+  tone,
+  label,
+  value,
+  hint,
+  negative,
+}: {
+  kpi: Kpi;
+  onOpen: (k: Kpi) => void;
+  icon: IconName;
+  tone: string;
+  label: string;
+  value: string;
+  hint?: string;
+  negative?: boolean;
+}) {
+  // The label is the button; it stretches over the whole tile, so a tap anywhere on the tile opens the breakdown.
   return (
-    <div className={`tile tile-${tone}`}>
+    <div className={`tile tile-${tone} tile-openable`}>
       <span className="tile-icon">
         <Icon name={icon} size={18} />
       </span>
-      <dt>{label}</dt>
+      <Icon name="right" size={16} className="tile-chevron" />
+      <dt>
+        <button type="button" className="tile-open" onClick={() => onOpen(kpi)} aria-haspopup="dialog">
+          {label}
+        </button>
+      </dt>
       <dd className={negative ? 'negative' : ''}>{value}</dd>
       {hint && <span className="tile-hint">{hint}</span>}
     </div>
@@ -132,23 +188,11 @@ function Tile({ icon, tone, label, value, hint, negative }: { icon: IconName; to
 
 // ---------- Statement ----------
 
-function Row({ label, value, strong, muted, sub, note }: { label: string; value: string; strong?: boolean; muted?: boolean; sub?: boolean; note?: string }) {
-  return (
-    <tr className={`${strong ? 'row-strong' : ''} ${muted ? 'row-muted' : ''} ${sub ? 'row-sub' : ''}`}>
-      <th scope="row">
-        {label}
-        {note && <span className="row-note">{note}</span>}
-      </th>
-      <td className="num">{value}</td>
-    </tr>
-  );
-}
-
 function Statement({ f, currency }: { f: MonthFigures; currency: string }) {
   const salary = f.fundingSalaries[0];
   const openingNote = f.openingSource === 'carryover' ? 'carried over from last month' : f.openingSource === 'manual' ? 'entered for this month' : undefined;
   return (
-    <section className="card">
+    <section className="card" id="statement">
       <div className="card-head">
         <h2>
           <Icon name="wallet" className="card-icon" /> Month statement
@@ -166,6 +210,13 @@ function Statement({ f, currency }: { f: MonthFigures; currency: string }) {
             <Row label="Overpaid" value={money(f.salaryOverpaid)} note="received more than expected" />
           ) : (
             <Row label="Salary still due" value={money(f.salaryOutstanding)} muted={f.salaryOutstanding === 0} note={f.salaryOutstanding ? 'not counted until received' : undefined} />
+          )}
+          {f.salaryOutstanding > 0 && f.timing !== 'future' && (
+            <tr className="row-action">
+              <td colSpan={2}>
+                <MarkReceived f={f} className="btn btn-sm btn-primary" />
+              </td>
+            </tr>
           )}
           <tr className="group-head">
             <th colSpan={2}>Money available</th>
@@ -305,11 +356,14 @@ function Comparison({ s }: { s: MonthSummary }) {
           <ol className="plain-list ranked">
             {f.topCategories.map((c) => (
               <li key={c.categoryId}>
-                <span>
-                  <span className="swatch" style={{ background: color(c.color) }} aria-hidden="true" />
-                  {c.name}
-                </span>
-                <span className="num">{money(c.net)}</span>
+                <Link to={ledgerLink({ category: c.categoryId })} className="kpi-list-link">
+                  <span>
+                    <span className="swatch" style={{ background: color(c.color) }} aria-hidden="true" />
+                    {c.name}
+                  </span>
+                  <span className="num">{money(c.net)}</span>
+                  <Icon name="right" size={14} className="kpi-chevron" />
+                </Link>
               </li>
             ))}
           </ol>
@@ -359,8 +413,10 @@ function BudgetTable({ f }: { f: MonthFigures }) {
             {rows.map((c) => (
               <tr key={c.categoryId} className={c.isArchived ? 'row-muted' : ''}>
                 <th scope="row">
-                  <span className="swatch" style={{ background: color(c.color) }} aria-hidden="true" />
-                  {c.name}
+                  <Link to={ledgerLink({ category: c.categoryId })} className="row-link" title={`See ${c.name} entries`}>
+                    <span className="swatch" style={{ background: color(c.color) }} aria-hidden="true" />
+                    {c.name}
+                  </Link>
                   {c.isArchived && <span className="badge">archived</span>}
                 </th>
                 <td className={`num ${c.budget == null ? 'muted' : ''}`}>{c.budget == null ? (anyBudget ? 'Not set' : '–') : money(c.budget, { dash: false })}</td>
