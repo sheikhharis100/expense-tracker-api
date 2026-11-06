@@ -617,13 +617,13 @@ function MatrixTable({
         <thead>
           <tr>
             <th scope="col" className="sticky-col">Date</th>
-            {visible.map((c) => {
+            {visible.map((c, col) => {
               const drag = dragged.widths[c.id];
               return (
                 <th
                   key={c.id}
                   scope="col"
-                  className="num col-th resizable"
+                  className={`num col-th resizable ${col % 2 ? 'band' : ''}`}
                   style={{ ['--col' as string]: color(c.color), ...(drag ? { width: drag, minWidth: drag } : c.width ? { minWidth: c.width } : {}) }}
                 >
                   <ColumnHeader id={c.id} name={c.name} swatch={color(c.color)} />
@@ -631,7 +631,7 @@ function MatrixTable({
                 </th>
               );
             })}
-            <th scope="col" className="num">Daily total</th>
+            <th scope="col" className="num total-col">Daily total</th>
             <th scope="col" className="remarks-col">Remarks</th>
           </tr>
         </thead>
@@ -652,7 +652,7 @@ function MatrixTable({
                   const entries = cell?.entries ?? [];
                   if (entries.length > 1)
                     return (
-                      <td key={c.id} className="multi-cell">
+                      <td key={c.id} className={`multi-cell ${col % 2 ? 'band' : ''}`}>
                         <button type="button" className="cell-button" data-cell={`${r}:${col}`} onClick={() => onOpenCell(day, c.id)} aria-label={`${entries.length} entries in ${c.name} on ${label}`}>
                           {cell!.net ? money(cell!.net) : ''}
                           {cell!.planned ? <span className="planned-amount"> {money(cell!.planned)}</span> : null}
@@ -663,7 +663,7 @@ function MatrixTable({
                   const single = entries[0];
                   const planned = single?.status === 'Planned';
                   return (
-                    <td key={c.id} className={`editable ${planned ? 'cell-planned' : ''}`}>
+                    <td key={c.id} className={`editable ${planned ? 'cell-planned' : ''} ${col % 2 ? 'band' : ''}`}>
                       <EditCell
                         display={single ? money(single.amount) : ''}
                         edit={single ? toExpression([single.amount]) : ''}
@@ -681,7 +681,7 @@ function MatrixTable({
                     </td>
                   );
                 })}
-                <td className="num calc total-cell">{money(day.net)}</td>
+                <td className="num calc total-cell total-col">{money(day.net)}</td>
                 <td className="editable remarks-col">
                   <EditCell
                     display={day.note}
@@ -703,13 +703,13 @@ function MatrixTable({
         <tfoot>
           <tr>
             <th scope="row" className="sticky-col">Total</th>
-            {visible.map((c) => (
-              <td key={c.id} className="num">
+            {visible.map((c, col) => (
+              <td key={c.id} className={`num ${col % 2 ? 'band' : ''}`}>
                 {money(m.columnTotals[c.id] ?? 0)}
               </td>
             ))}
-            <td className="num grand-total">{money(m.net)}</td>
-            <td />
+            <td className="num grand-total total-col">{money(m.net)}</td>
+            <td className="remarks-col" />
           </tr>
         </tfoot>
       </table>
