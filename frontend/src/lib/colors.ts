@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useTheme } from './theme';
 
 // Category colours are stored as the light-mode step of the categorical palette (backend DefaultData.Palette).
 // Dark mode uses the same hues stepped for the dark surface.
@@ -15,15 +15,9 @@ export const PALETTE: { light: string; dark: string; name: string }[] = [
 
 const darkByLight = new Map(PALETTE.map((p) => [p.light.toLowerCase(), p.dark]));
 
-const query = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-
-function subscribe(cb: () => void) {
-  query?.addEventListener('change', cb);
-  return () => query?.removeEventListener('change', cb);
-}
-
+// The theme the app shows (the user's choice, or the device setting), not just the device setting.
 export function useDarkMode(): boolean {
-  return useSyncExternalStore(subscribe, () => query?.matches ?? false, () => false);
+  return useTheme().theme === 'dark';
 }
 
 export function useSeriesColor() {

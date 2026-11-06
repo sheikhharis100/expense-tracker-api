@@ -132,9 +132,9 @@ function Tile({ icon, tone, label, value, hint, negative }: { icon: IconName; to
 
 // ---------- Statement ----------
 
-function Row({ label, value, strong, muted, note }: { label: string; value: string; strong?: boolean; muted?: boolean; note?: string }) {
+function Row({ label, value, strong, muted, sub, note }: { label: string; value: string; strong?: boolean; muted?: boolean; sub?: boolean; note?: string }) {
   return (
-    <tr className={`${strong ? 'row-strong' : ''} ${muted ? 'row-muted' : ''}`}>
+    <tr className={`${strong ? 'row-strong' : ''} ${muted ? 'row-muted' : ''} ${sub ? 'row-sub' : ''}`}>
       <th scope="row">
         {label}
         {note && <span className="row-note">{note}</span>}
@@ -173,6 +173,9 @@ function Statement({ f, currency }: { f: MonthFigures; currency: string }) {
           <Row label="Opening balance" value={signed(f.openingBalance)} note={openingNote} />
           <Row label="Salary income for this month" value={money(f.salaryIncome)} />
           <Row label="Other received income" value={money(f.otherIncome)} />
+          {(f.otherIncomeSources ?? []).map((s) => (
+            <Row key={s.categoryId ?? 'none'} label={s.name} value={money(s.amount)} sub />
+          ))}
           <Row label="Total received income" value={money(f.receivedIncome)} strong />
           <Row label="Available funds" value={signed(f.availableFunds)} strong note="opening + received income" />
           <tr className="group-head">
@@ -182,6 +185,12 @@ function Statement({ f, currency }: { f: MonthFigures; currency: string }) {
           <Row label="Refunds" value={f.refunds ? `−${money(f.refunds)}` : '–'} />
           <Row label="Net spending" value={money(f.netSpending)} strong />
           <Row label="Additional expenses" value={money(f.additionalNet)} muted note="already included above" />
+          <Row
+            label="Average spent per day"
+            value={orNA(f.averageDailySpending, (v) => money(Math.round(v)))}
+            note={f.elapsedDays ? `${money(f.netSpending, { dash: false })} over ${f.elapsedDays} day${f.elapsedDays === 1 ? '' : 's'} so far` : undefined}
+          />
+          <Row label="Days with spending logged" value={String(f.daysWithSpending)} note={f.elapsedDays ? `of ${f.elapsedDays} so far` : undefined} />
         </tbody>
         <tfoot>
           <Row label="Remaining balance" value={signed(f.remainingBalance, { dash: false })} strong />

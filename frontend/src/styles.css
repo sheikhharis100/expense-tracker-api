@@ -37,43 +37,42 @@
   --font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #070b14;
-    --glow-1: rgba(16, 185, 129, 0.16);
-    --glow-2: rgba(99, 102, 241, 0.16);
-    --surface: #0f1624;
-    --surface-2: #162033;
-    --surface-3: #1d2a40;
-    --ink: #f3f6fb;
-    --ink-2: #b6c1d4;
-    --ink-muted: #7d8ba4;
-    --grid: #1d2a40;
-    --axis: #2b3b58;
-    --border: rgba(255, 255, 255, 0.08);
-    --brand: #10b981;
-    --brand-strong: #34d399;
-    --brand-ink: #6ee7b7;
-    --brand-wash: rgba(16, 185, 129, 0.14);
-    --accent: #3987e5;
-    --accent-ink: #86b6ef;
-    --accent-track: #184f95;
-    --editable: rgba(251, 191, 36, 0.07);
-    --editable-hover: rgba(251, 191, 36, 0.13);
-    --calc: #121b2b;
-    --today: rgba(16, 185, 129, 0.1);
-    --good: #34d399;
-    --good-wash: rgba(52, 211, 153, 0.14);
-    --warning: #fbbf24;
-    --warning-wash: rgba(251, 191, 36, 0.14);
-    --critical: #f87171;
-    --critical-ink: #fca5a5;
-    --critical-wash: rgba(248, 113, 113, 0.14);
-    --plan: #a5b4fc;
-    --plan-wash: rgba(129, 140, 248, 0.16);
-    --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
-  }
+/* Set on <html> by index.html and lib/theme.ts: the user's choice, or the device setting. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #070b14;
+  --glow-1: rgba(16, 185, 129, 0.16);
+  --glow-2: rgba(99, 102, 241, 0.16);
+  --surface: #0f1624;
+  --surface-2: #162033;
+  --surface-3: #1d2a40;
+  --ink: #f3f6fb;
+  --ink-2: #b6c1d4;
+  --ink-muted: #7d8ba4;
+  --grid: #1d2a40;
+  --axis: #2b3b58;
+  --border: rgba(255, 255, 255, 0.08);
+  --brand: #10b981;
+  --brand-strong: #34d399;
+  --brand-ink: #6ee7b7;
+  --brand-wash: rgba(16, 185, 129, 0.14);
+  --accent: #3987e5;
+  --accent-ink: #86b6ef;
+  --accent-track: #184f95;
+  --editable: rgba(251, 191, 36, 0.07);
+  --editable-hover: rgba(251, 191, 36, 0.13);
+  --calc: #121b2b;
+  --today: rgba(16, 185, 129, 0.1);
+  --good: #34d399;
+  --good-wash: rgba(52, 211, 153, 0.14);
+  --warning: #fbbf24;
+  --warning-wash: rgba(251, 191, 36, 0.14);
+  --critical: #f87171;
+  --critical-ink: #fca5a5;
+  --critical-wash: rgba(248, 113, 113, 0.14);
+  --plan: #a5b4fc;
+  --plan-wash: rgba(129, 140, 248, 0.16);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -256,6 +255,20 @@ kbd {
   background: color-mix(in srgb, var(--page) 80%, transparent);
   backdrop-filter: blur(14px) saturate(1.4);
   border-bottom: 1px solid var(--border);
+  /* An iPhone home-screen app in the dark theme draws under the status bar; keep the bar's content below it. */
+  padding-top: env(safe-area-inset-top);
+}
+
+.theme-toggle {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--ink-2);
+}
+
+.theme-toggle:hover:not(:disabled) {
+  color: var(--ink);
 }
 
 .topbar-inner {
@@ -1392,6 +1405,17 @@ kbd {
   font-size: 12px;
   font-weight: 450;
   color: var(--ink-muted);
+}
+
+/* A breakdown line under the row above it (e.g. each other-income source). */
+.statement .row-sub th {
+  padding-left: 22px;
+  font-weight: 450;
+  color: var(--ink-2);
+}
+
+.statement .row-sub td {
+  color: var(--ink-2);
 }
 
 .group-row th,
@@ -2801,6 +2825,26 @@ body.is-resizing .col-resize {
   font-size: 18px;
   cursor: pointer;
   padding: 0 4px;
+}
+
+/* ---------- Phone top bar ---------- */
+
+/* Room for every control on a phone: the open tab keeps its label, the others show just their icon, and the
+   live badge shows its dot. The labels stay readable to screen readers. */
+@media (max-width: 480px) {
+  .nav-link:not(.active) .nav-text,
+  .live-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .nav-link:not(.active) {
+    padding: 8px;
+  }
 }
 
 /* ---------- Responsive ---------- */

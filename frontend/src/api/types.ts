@@ -99,6 +99,8 @@ export interface MonthFigures {
   salaryOverpaid: number;
   salaryIncome: number;
   otherIncome: number;
+  // Received other income per category (null = uncategorised), in category order.
+  otherIncomeSources: { categoryId: number | null; name: string; color: string; amount: number }[];
   receivedIncome: number;
   expectedOtherIncome: number;
   openingBalance: number;

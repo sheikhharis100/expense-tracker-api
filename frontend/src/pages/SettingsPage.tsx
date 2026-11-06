@@ -15,13 +15,14 @@ import { ApiError } from '../api/client';
 import type { Category, CategoryType, Me, SalaryPlan, SheetImportResult } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useColumnEditor, useMoveCategory } from '../components/ColumnEditor';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { toast } from '../components/Toast';
 import { useCalendar } from '../components/Workspace';
 import { parseAmounts } from '../lib/amounts';
 import { useSeriesColor } from '../lib/colors';
 import { shiftKey, ymLabel, ymLongLabel } from '../lib/dates';
 import { money } from '../lib/format';
+import { useTheme, type ThemeChoice } from '../lib/theme';
 
 export function SettingsPage() {
   const me = useMe();
@@ -38,6 +39,7 @@ export function SettingsPage() {
           <h1>Your tracker</h1>
         </div>
       </header>
+      <AppearanceCard />
       {me.data && <ProfileCard me={me.data} />}
       {me.data && <SalaryPlans me={me.data} />}
       <CategoriesCard />
@@ -45,6 +47,34 @@ export function SettingsPage() {
       <ImportCard />
       {me.data && <AccountCard me={me.data} />}
     </div>
+  );
+}
+
+const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: IconName }[] = [
+  { value: 'system', label: 'Match phone', icon: 'sliders' },
+  { value: 'light', label: 'Light', icon: 'sun' },
+  { value: 'dark', label: 'Dark', icon: 'moon' },
+];
+
+function AppearanceCard() {
+  const { choice, theme, setChoice } = useTheme();
+  return (
+    <section className="card" id="appearance">
+      <div className="card-head">
+        <h2>Appearance</h2>
+      </div>
+      <div className="segmented" role="radiogroup" aria-label="Theme">
+        {THEME_OPTIONS.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={choice === o.value} className={choice === o.value ? 'on' : ''} onClick={() => setChoice(o.value)}>
+            <Icon name={o.icon} size={15} />
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="muted small">
+        {choice === 'system' ? `Follows this device's setting (now ${theme}).` : `Always ${theme} on this device.`} The sun/moon button at the top switches it too.
+      </p>
+    </section>
   );
 }
 
