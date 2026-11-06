@@ -66,6 +66,30 @@ public class ImportAndProtectionTests
     }
 
     [Fact]
+    public async Task CsvImport_ReadsDatesDayFirst()
+    {
+        var api = await _fx.NewUserAsync();
+        const string csv =
+            "Date,Description,Amount,Category,Account\n" +
+            "05/11/2026,Day first,100,Food,Cash\n" +
+            "3-11-2026,Dashes,200,Food,Cash\n" +
+            "02 Nov 2026,Written month,300,Food,Cash\n" +
+            "2026-11-01,ISO,400,Food,Cash\n" +
+            "13/13/2026,Impossible,500,Food,Cash\n";
+
+        var result = await api.Upload("/api/expenses/import/csv", "transactions.csv", csv);
+        Assert.Equal(4, result["importedSuccessfully"]!.GetValue<int>());
+        Assert.Contains("13/13/2026", result["errors"]![0]!["reason"]!.GetValue<string>());
+
+        var dates = (await api.Get("/api/expenses?month=2026-11"))["rows"]!.AsArray()
+            .ToDictionary(r => r!["description"]!.GetValue<string>(), r => r!["date"]!.GetValue<string>());
+        Assert.Equal("2026-11-05", dates["Day first"]);
+        Assert.Equal("2026-11-03", dates["Dashes"]);
+        Assert.Equal("2026-11-02", dates["Written month"]);
+        Assert.Equal("2026-11-01", dates["ISO"]);
+    }
+
+    [Fact]
     public async Task CsvImport_IncomeRowsBecomeReceivedIncome_AndBadRowsAreSkipped()
     {
         var api = await _fx.NewUserAsync();

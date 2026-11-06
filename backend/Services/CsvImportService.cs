@@ -1,5 +1,6 @@
 using CsvHelper;
 using CsvHelper.Configuration;
+using CsvHelper.Configuration.Attributes;
 using CsvHelper.TypeConversion;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
@@ -174,6 +175,9 @@ public class CsvImportService
 
 public class TransactionImportRow
 {
+    // Day first, as dates are written in Pakistan (05/11/2026 is 5 November); ISO and written-out months too.
+    [Format("yyyy-MM-dd", "yyyy-M-d", "yyyy/MM/dd", "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "dd.MM.yyyy", "d.M.yyyy",
+        "d MMM yyyy", "dd MMM yyyy", "d MMMM yyyy", "d-MMM-yyyy", "dd-MMM-yyyy", "yyyy-MM-ddTHH:mm:ss", "d/M/yyyy H:mm", "d/M/yyyy H:mm:ss")]
     public DateTime Date { get; set; }
     public string Description { get; set; } = string.Empty;
     public decimal Amount { get; set; }
