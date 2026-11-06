@@ -63,7 +63,7 @@ public class SheetImportService
         }
         var salaries = parsed.Salaries.Where(s => YearMonth.IsValid(s.PayMonth.Year, s.PayMonth.Month)).ToList();
 
-        if (days.Count == 0 && salaries.Count == 0)
+        if (days.Count == 0 && salaries.Count == 0 && parsed.Incomes.Count == 0)
             return result;
 
         var account = await DefaultData.GetOrCreateDefaultAccountAsync(_context, user);
@@ -217,7 +217,48 @@ public class SheetImportService
             });
         }
 
+        // A month row's "Income: 60,500" beyond its salary (pending/extra and other income on the sheet's Summary) becomes
+        // one received other-income entry for that month. Its request id is derived from the month, so importing again
+        // updates it instead of adding another, and it goes away if the sheet no longer shows anything beyond salary.
+        if (parsed.Incomes.Count > 0)
+        {
+            var otherIncome = categories.FirstOrDefault(c => c.Type == "Income" && !c.IsArchived && c.Name.Equals("Other income", StringComparison.OrdinalIgnoreCase));
+            foreach (var hint in parsed.Incomes)
+            {
+                if (!YearMonth.IsValid(hint.Month.Year, hint.Month.Month) || hint.Month > YearMonth.Of(today)) continue;
+                var salary = salaries.Where(s => s.PayMonth.AddMonths(user.SalaryLagMonths) == hint.Month).Sum(s => s.Amount);
+                var extra = hint.Total - salary;
+                var requestId = SheetIncomeId(userId, hint.Month);
+                var imported = await _context.IncomeReceipts.Include(r => r.Allocations)
+                    .FirstOrDefaultAsync(r => r.UserId == userId && r.ClientRequestId == requestId);
+                if (extra <= 0)
+                {
+                    if (imported != null) _context.IncomeReceipts.Remove(imported);
+                    continue;
+                }
+
+                var receivedOn = DateOnly.FromDateTime(hint.Month.FirstDay);
+                if (receivedOn > today) receivedOn = today;
+                if (imported == null)
+                {
+                    imported = new IncomeReceipt { UserId = userId, ClientRequestId = requestId, Kind = ReceiptKind.Other, CreatedAt = DateTime.UtcNow };
+                    _context.IncomeReceipts.Add(imported);
+                }
+                imported.CategoryId = otherIncome?.Id;
+                imported.Status = ReceiptStatus.Received;
+                imported.ReceivedDate = receivedOn;
+                imported.Amount = extra;
+                imported.Description = "Income beyond salary (from the sheet)";
+                imported.Allocations.Clear();
+                imported.Allocations.Add(new IncomeAllocation { Year = hint.Month.Year, Month = hint.Month.Month, Amount = extra });
+                result.OtherIncomeImported++;
+            }
+        }
+
         await _context.SaveChangesAsync();
         return result;
     }
+
+    private static Guid SheetIncomeId(int userId, YearMonth month) =>
+        new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes($"sheet-other-income:{userId}:{month.Year}-{month.Month:00}")));
 }

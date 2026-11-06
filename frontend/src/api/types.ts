@@ -581,6 +581,7 @@ export interface SheetImportResult {
   entriesCreated: number;
   notesImported: number;
   salariesImported: number;
+  otherIncomeImported: number;
   cellsSkipped: number;
   categoriesCreated: string[];
   warnings: string[];

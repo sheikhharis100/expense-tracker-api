@@ -446,6 +446,7 @@ function ImportCard() {
           <p>
             Read {result.rowsRead} days · <b>{result.entriesCreated}</b> amounts across <b>{result.daysImported}</b> days · {result.notesImported} remarks ·{' '}
             {result.salariesImported} salary rows
+            {result.otherIncomeImported > 0 && <> · {result.otherIncomeImported} months of other income</>}
           </p>
           {result.categoriesCreated.length > 0 && <p className="muted">New categories: {result.categoriesCreated.join(', ')}</p>}
           {result.warnings.length > 0 && (

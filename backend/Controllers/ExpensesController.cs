@@ -98,7 +98,7 @@ public class ExpensesController : AppController
         if (await FileError(file) is { } error) return Error(error);
         using var stream = file!.OpenReadStream();
         var result = await _sheet.ImportAsync(UserId, stream);
-        if (result.DaysImported > 0 || result.SalariesImported > 0) await _notifier.NotifyAsync(UserId, LedgerScopes.Import);
+        if (result.DaysImported > 0 || result.SalariesImported > 0 || result.OtherIncomeImported > 0) await _notifier.NotifyAsync(UserId, LedgerScopes.Import);
         return Ok(result);
     }
 

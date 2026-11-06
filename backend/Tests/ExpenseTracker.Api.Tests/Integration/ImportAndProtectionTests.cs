@@ -22,6 +22,7 @@ public class ImportAndProtectionTests
         Assert.Equal(10, result["entriesCreated"]!.GetValue<int>());
         Assert.Equal(3, result["notesImported"]!.GetValue<int>());
         Assert.Equal(1, result["salariesImported"]!.GetValue<int>());
+        Assert.Equal(1, result["otherIncomeImported"]!.GetValue<int>());
         // The sheet's "Travel (InDrive)" column lands in the built-in "Travel — InDrive" category, not a duplicate.
         Assert.Empty(result["categoriesCreated"]!.AsArray());
 
@@ -51,6 +52,9 @@ public class ImportAndProtectionTests
         var nov = await api.Summary("2026-11");
         Assert.Equal(55_000m, D(nov["salaryIncome"]));
         Assert.Equal(22_235m, D(nov["netSpending"]));
+        // "Income: 60,500" beyond the 55,000 salary is the month's pending/extra and other income.
+        Assert.Equal(5_500m, D(nov["otherIncome"]));
+        Assert.Equal(60_500m, D(nov["receivedIncome"]));
         var payment = (await api.Get("/api/income/2026-11"))["funding"]!.AsArray().Single()!["payments"]!.AsArray().Single()!;
         Assert.Equal("Received", payment["status"]!.GetValue<string>());
         Assert.Equal(55_000m, D(payment["amount"]));
@@ -60,6 +64,8 @@ public class ImportAndProtectionTests
         var after = await api.Summary("2026-11");
         Assert.Equal(55_000m, D(after["salaryIncome"]));
         Assert.Equal(22_235m, D(after["netSpending"]));
+        Assert.Equal(60_500m, D(after["receivedIncome"]));
+        Assert.Single((await api.Get("/api/income/2026-11"))["otherIncome"]!.AsArray());
         Assert.Equal(10, (await api.Get("/api/expenses?month=2026-11"))["rows"]!.AsArray().Count);
         Assert.Single((await api.Get("/api/income/2026-11"))["funding"]!.AsArray().Single()!["payments"]!.AsArray());
         Assert.Single((await api.Get("/api/income/plans")).AsArray());

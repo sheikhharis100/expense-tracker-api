@@ -720,6 +720,7 @@ public class SheetImportResultDto
     public int EntriesCreated { get; set; }
     public int NotesImported { get; set; }
     public int SalariesImported { get; set; }
+    public int OtherIncomeImported { get; set; }
     public int CellsSkipped { get; set; }
     public List<string> CategoriesCreated { get; set; } = new();
     public List<string> Warnings { get; set; } = new();

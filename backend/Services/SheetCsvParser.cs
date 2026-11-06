@@ -12,12 +12,15 @@ public static class SheetCsvParser
 {
     public record ParsedDay(DateOnly Date, Dictionary<string, List<decimal>> Cells, string Note);
     public record SalaryHint(YearMonth PayMonth, decimal Amount);
+    // "Income: 60,500" on a month row: everything received for that month, salary included.
+    public record IncomeHint(YearMonth Month, decimal Total);
 
     public class ParseResult
     {
         public List<string> CategoryColumns { get; } = new();
         public List<ParsedDay> Days { get; } = new();
         public List<SalaryHint> Salaries { get; } = new();
+        public List<IncomeHint> Incomes { get; } = new();
         public List<string> Warnings { get; } = new();
         public int RowsRead { get; set; }
         public int CellsSkipped { get; set; }
@@ -35,6 +38,10 @@ public static class SheetCsvParser
     private static readonly Regex MonthSectionPattern = new(@"^(?<month>[A-Za-z]{3,9})\s+(?<year>\d{4})$", RegexOptions.Compiled);
     private static readonly Regex SalaryPattern = new(
         @"Salary\s*\((?<month>[A-Za-z]{3,9})\s+pay\)\s*:\s*(?<amount>[\d,]+(?:\.\d+)?)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // Not "Other income:"; just the month's total.
+    private static readonly Regex IncomePattern = new(
+        @"(?<![A-Za-z]\s?)\bIncome\s*:\s*(?<amount>[\d,]+(?:\.\d+)?)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static ParseResult Parse(TextReader reader)
@@ -150,6 +157,14 @@ public static class SheetCsvParser
     {
         if (section is not YearMonth month)
             return;
+
+        foreach (var cell in row)
+        {
+            var income = IncomePattern.Match(cell);
+            if (income.Success && TryParseAmount(income.Groups["amount"].Value, out var total) && InputRules.Amount(total) == null
+                && !result.Incomes.Any(i => i.Month == month))
+                result.Incomes.Add(new IncomeHint(month, total));
+        }
 
         foreach (var cell in row)
         {
