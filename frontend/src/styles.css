@@ -36,12 +36,19 @@
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.06);
   --radius: 18px;
   --gutter: clamp(16px, 2.2vw, 40px);
+  /* Daily log grid: cell lines, the band on every other column, and the row under the pointer. */
+  --cell-line: rgba(15, 23, 42, 0.12);
+  --col-band: rgba(15, 23, 42, 0.035);
+  --row-hover: rgba(5, 150, 105, 0.07);
   --font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Set on <html> by index.html and lib/theme.ts: the user's choice, or the device setting. */
 :root[data-theme='dark'] {
   color-scheme: dark;
+  --cell-line: rgba(255, 255, 255, 0.1);
+  --col-band: rgba(255, 255, 255, 0.035);
+  --row-hover: rgba(52, 211, 153, 0.09);
   --page: #070b14;
   --glow-1: rgba(16, 185, 129, 0.16);
   --glow-2: rgba(99, 102, 241, 0.16);
@@ -1830,6 +1837,44 @@ td.editable:hover {
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+/* A real grid: a line between every column and row, banded columns, and separate total and remarks columns. */
+.log-table th,
+.log-table td {
+  border-bottom: 1px solid var(--cell-line);
+  border-right: 1px solid var(--cell-line);
+}
+
+.log-table tr > :last-child {
+  border-right: 0;
+}
+
+.log-table .band {
+  background-image: linear-gradient(var(--col-band), var(--col-band));
+}
+
+.log-table thead .col-th {
+  background-color: color-mix(in srgb, var(--col) 9%, var(--surface));
+}
+
+.log-table .total-col {
+  border-left: 2px solid var(--axis);
+  font-weight: 750;
+}
+
+.log-table .remarks-col {
+  border-left: 2px solid var(--axis);
+}
+
+/* The row being read or typed in stands out across the whole grid. */
+.log-table tbody tr:hover > *,
+.log-table tbody tr:focus-within > * {
+  box-shadow: inset 0 0 0 9999px var(--row-hover);
+}
+
+.log-table tbody tr:focus-within > .sticky-col {
+  box-shadow: inset 3px 0 0 var(--brand), inset 0 0 0 9999px var(--row-hover);
 }
 
 .log-table tfoot th,
