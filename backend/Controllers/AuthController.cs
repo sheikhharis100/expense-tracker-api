@@ -157,6 +157,7 @@ public class AuthController : ControllerBase
         // Opening the link proved they read this inbox.
         user.EmailVerifiedAt ??= _clock.UtcNow;
         await _context.SaveChangesAsync();
+        SessionTokens.Forget(user.Id);
         await _tokens.RevokeAsync(user.Id, AuthTokenPurpose.Reset, AuthTokenPurpose.Login);
 
         _emails.SendPasswordChangedNotice(user);

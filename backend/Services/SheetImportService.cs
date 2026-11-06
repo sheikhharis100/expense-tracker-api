@@ -190,6 +190,18 @@ public class SheetImportService
             var statement = await _context.SalaryStatements.Include(s => s.Components)
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.EarnedYear == hint.PayMonth.Year && s.EarnedMonth == hint.PayMonth.Month);
             if (statement != null && await _context.IncomeReceipts.AnyAsync(r => r.SalaryStatementId == statement.Id)) continue;
+            // A salary saved in the app but never paid follows the sheet, like the plan does; otherwise the difference
+            // would show as "salary still due" next to the payment recorded below.
+            if (statement != null)
+            {
+                var expected = SalaryMath.ExpectedNet(statement.Components.Select(c => new LedgerComponent(c.Kind, c.Label, c.Amount)));
+                if (expected != hint.Amount)
+                {
+                    _context.SalaryComponents.RemoveRange(statement.Components);
+                    statement.Components.Clear();
+                    statement.Components.Add(new SalaryComponent { Kind = SalaryComponentKind.Base, Label = "Base salary", Amount = hint.Amount });
+                }
+            }
             statement ??= new SalaryStatement
             {
                 UserId = userId,

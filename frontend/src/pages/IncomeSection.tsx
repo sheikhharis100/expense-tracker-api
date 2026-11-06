@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   newRequestId,
   useAddSalaryPayment,
@@ -130,7 +130,14 @@ function NoSalary({ ym, lag }: { ym: string; lag: number }) {
 
 function StatementCard({ s }: { s: SalaryStatement }) {
   const [editing, setEditing] = useState(false);
-  const [paying, setPaying] = useState<Receipt | 'new' | null>(null);
+  // "Mark as received" on the Summary links here with ?pay=<earned month> to open this salary's payment form.
+  const [params, setParams] = useSearchParams();
+  const [paying, setPaying] = useState<Receipt | 'new' | null>(() => (params.get('pay') === s.earned ? 'new' : null));
+  useEffect(() => {
+    if (params.get('pay') !== s.earned) return;
+    params.delete('pay');
+    setParams(params, { replace: true });
+  }, [params, setParams, s.earned]);
   const remove = useDeleteReceipt();
   const statusClass = { Expected: 'badge-plan', Partial: 'badge-warn', Received: 'badge-good', Overpaid: 'badge-warn' }[s.status] ?? '';
 

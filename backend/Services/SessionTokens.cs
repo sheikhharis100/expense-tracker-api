@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -53,6 +54,13 @@ public class SessionTokens
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
+    // The version is read on every request; remembering it for a minute saves that database round trip. Every change
+    // made here calls Forget, so a sign-out takes effect at once; another server instance would see it within the minute.
+    private static readonly ConcurrentDictionary<int, (int? Version, DateTime Until)> Versions = new();
+    private static readonly TimeSpan RememberFor = TimeSpan.FromMinutes(1);
+
+    public static void Forget(int userId) => Versions.TryRemove(userId, out _);
+
     // Runs for every authenticated request and live-hub connection. A token from before a password change or
     // "sign out of all devices" (older SessionVersion), or for a deleted account, is refused. Tokens issued before
     // session versions existed have no claim and count as version 0, so nobody is signed out by the upgrade.
@@ -66,8 +74,15 @@ public class SessionTokens
         }
         var claimed = int.TryParse(principal!.FindFirst(SessionClaims.Version)?.Value, out var v) ? v : 0;
 
-        var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
-        var current = await db.Users.Where(u => u.Id == userId).Select(u => (int?)u.SessionVersion).FirstOrDefaultAsync();
+        int? current;
+        if (Versions.TryGetValue(userId, out var known) && known.Until > DateTime.UtcNow)
+            current = known.Version;
+        else
+        {
+            var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+            current = await db.Users.Where(u => u.Id == userId).Select(u => (int?)u.SessionVersion).FirstOrDefaultAsync();
+            Versions[userId] = (current, DateTime.UtcNow + RememberFor);
+        }
         if (current != claimed) context.Fail("This session has ended");
     }
 }
