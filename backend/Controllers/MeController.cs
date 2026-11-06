@@ -79,7 +79,9 @@ public class MeController : AppController
             SupportedCurrencies = _fx.SupportedCurrencies.ToList(),
             PaymentMethods = PaymentMethods.All.ToList(),
             NeedsSetup = !await _context.SalaryPlans.AnyAsync(s => s.UserId == user.Id)
-                && !await _context.SalaryStatements.AnyAsync(s => s.UserId == user.Id)
+                && !await _context.SalaryStatements.AnyAsync(s => s.UserId == user.Id),
+            EmailVerified = user.EmailVerifiedAt != null,
+            MemberSince = LocalCalendar.ToLocalDate(user.CreatedAt, user.TimeZone)
         };
     }
 }

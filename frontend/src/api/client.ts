@@ -116,7 +116,9 @@ export async function api<T>(path: string, { method = 'GET', body, form, auth = 
     }
 
     if (res.status === 401 && auth) {
-      setToken(null);
+      // Only if the refused token is still the current one: after a password change this device already holds the
+      // new token, and a request that left with the old one mustn't sign it out.
+      if (getToken() === token) setToken(null);
       throw new ApiError('Your session has ended. Please sign in again.', 401);
     }
     if (!res.ok) {

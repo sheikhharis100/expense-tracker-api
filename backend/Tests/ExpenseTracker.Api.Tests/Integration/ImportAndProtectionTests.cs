@@ -158,7 +158,7 @@ public class ImportAndProtectionTests
         Assert.Equal("Too many attempts. Wait a minute and try again.", (await limited.Content.ReadFromJsonAsync<JsonObject>())!["error"]!.GetValue<string>());
 
         // Registration counts toward the same limit; another client behind the same edge has its own.
-        var register = new { email = $"u{Guid.NewGuid():N}@example.com", password = "secret123" };
+        var register = new { email = $"u{Guid.NewGuid():N}@example.com", password = ApiFixture.Password };
         Assert.Equal(HttpStatusCode.TooManyRequests, (await Send("/api/auth/register", register, "198.51.100.7, 192.0.2.10")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Send("/api/auth/login", login, "198.51.100.8, 192.0.2.10")).StatusCode);
     }

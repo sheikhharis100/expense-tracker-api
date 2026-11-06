@@ -82,7 +82,9 @@ builder.Services.AddAuthentication(options =>
             if (!string.IsNullOrEmpty(token) && context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
                 context.Token = token;
             return Task.CompletedTask;
-        }
+        },
+        // Refuses tokens from before a password change or "sign out of all devices".
+        OnTokenValidated = SessionTokens.ValidateAsync
     };
 });
 
@@ -132,10 +134,32 @@ builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<SheetImportService>();
 builder.Services.AddScoped<LegacyBackfillService>();
 builder.Services.AddSingleton<LedgerNotifier>();
+
+// Accounts: password rules, sign-in tokens, emailed links.
+builder.Services.AddSingleton<SessionTokens>();
+builder.Services.AddScoped<PasswordPolicy>();
+builder.Services.AddScoped<OneTimeTokens>();
+builder.Services.AddScoped<AccountEmails>();
+builder.Services.AddSingleton<AppLinks>();
+builder.Services.AddEmailSender(builder.Configuration);
+if (builder.Configuration.GetValue("Security:BreachCheck", true))
+    builder.Services.AddHttpClient<IBreachedPasswordChecker, PwnedPasswordsChecker>(c =>
+    {
+        c.BaseAddress = new Uri(PwnedPasswordsChecker.BaseAddress);
+        // Sign-up waits on this, so give up quickly (the check then passes; see PwnedPasswordsChecker).
+        c.Timeout = TimeSpan.FromSeconds(3);
+        c.DefaultRequestHeaders.UserAgent.ParseAdd("ExpenseTracker/1.0");
+    });
+else
+    builder.Services.AddSingleton<IBreachedPasswordChecker, NoBreachCheck>();
+
 if (builder.Configuration.GetValue("BackgroundJobs:Enabled", true))
     builder.Services.AddHostedService<BudgetCheckBackgroundService>();
 
 var app = builder.Build();
+
+// Created now so a missing App:PublicUrl shows in the startup log rather than at the first emailed link.
+app.Services.GetRequiredService<AppLinks>();
 
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {

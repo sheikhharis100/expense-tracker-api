@@ -28,6 +28,20 @@ export interface Me {
   supportedCurrencies: string[];
   paymentMethods: string[];
   needsSetup: boolean;
+  // Missing from copies cached on the device before these existed.
+  emailVerified?: boolean;
+  memberSince?: IsoDate;
+}
+
+export interface ProfileStats {
+  entriesLogged: number;
+  monthsTracked: number;
+  firstMonth: Ym | null;
+}
+
+export interface AuthOptions {
+  // False when the server can't send email: sign-in links are hidden and password reset explains why.
+  emailEnabled: boolean;
 }
 
 export interface MeUpdate {

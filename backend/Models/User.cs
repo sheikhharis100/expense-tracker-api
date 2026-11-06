@@ -17,6 +17,13 @@ public class User
     public int? DefaultAccountId { get; set; }
     // Bumped by one-time data backfills (see LegacyBackfillService).
     public int DataVersion { get; set; }
+    // Set once the user opens a link sent to this address; cleared when the email changes.
+    public DateTime? EmailVerifiedAt { get; set; }
+    // Copied into every token ("sv" claim). Bumping it signs out every device holding an older token.
+    public int SessionVersion { get; set; }
+    // Consecutive wrong passwords; reaching the limit locks sign-in by password until LockedUntil.
+    public int FailedLoginCount { get; set; }
+    public DateTime? LockedUntil { get; set; }
     public List<Account> Accounts { get; set; } = new();
     public List<Category> Categories { get; set; } = new();
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useMatch } from 'react-router-dom';
 import { useTheme } from '../lib/theme';
 import { useLive } from '../live/LiveProvider';
+import { ProfileLink } from './Avatar';
 import { ColumnEditorProvider } from './ColumnEditor';
 import { Icon } from './Icon';
 import { SyncBadge, SyncSheet, useOfflineSync, WakingBanner } from './OfflineSync';
@@ -78,6 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <SyncBadge onOpen={() => setSyncOpen(true)} />
               <LiveBadge />
               <ThemeToggle />
+              <ProfileLink />
             </div>
             <WakingBanner />
           </header>
