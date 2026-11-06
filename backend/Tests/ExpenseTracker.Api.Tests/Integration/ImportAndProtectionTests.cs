@@ -22,6 +22,7 @@ public class ImportAndProtectionTests
         Assert.Equal(10, result["entriesCreated"]!.GetValue<int>());
         Assert.Equal(3, result["notesImported"]!.GetValue<int>());
         Assert.Equal(1, result["salariesImported"]!.GetValue<int>());
+        Assert.Equal(1, result["otherIncomeImported"]!.GetValue<int>());
         // The sheet's "Travel (InDrive)" column lands in the built-in "Travel — InDrive" category, not a duplicate.
         Assert.Empty(result["categoriesCreated"]!.AsArray());
 
@@ -51,6 +52,9 @@ public class ImportAndProtectionTests
         var nov = await api.Summary("2026-11");
         Assert.Equal(55_000m, D(nov["salaryIncome"]));
         Assert.Equal(22_235m, D(nov["netSpending"]));
+        // "Income: 60,500" beyond the 55,000 salary is the month's pending/extra and other income.
+        Assert.Equal(5_500m, D(nov["otherIncome"]));
+        Assert.Equal(60_500m, D(nov["receivedIncome"]));
         var payment = (await api.Get("/api/income/2026-11"))["funding"]!.AsArray().Single()!["payments"]!.AsArray().Single()!;
         Assert.Equal("Received", payment["status"]!.GetValue<string>());
         Assert.Equal(55_000m, D(payment["amount"]));
@@ -60,9 +64,35 @@ public class ImportAndProtectionTests
         var after = await api.Summary("2026-11");
         Assert.Equal(55_000m, D(after["salaryIncome"]));
         Assert.Equal(22_235m, D(after["netSpending"]));
+        Assert.Equal(60_500m, D(after["receivedIncome"]));
+        Assert.Single((await api.Get("/api/income/2026-11"))["otherIncome"]!.AsArray());
         Assert.Equal(10, (await api.Get("/api/expenses?month=2026-11"))["rows"]!.AsArray().Count);
         Assert.Single((await api.Get("/api/income/2026-11"))["funding"]!.AsArray().Single()!["payments"]!.AsArray());
         Assert.Single((await api.Get("/api/income/plans")).AsArray());
+    }
+
+    [Fact]
+    public async Task CsvImport_ReadsDatesDayFirst()
+    {
+        var api = await _fx.NewUserAsync();
+        const string csv =
+            "Date,Description,Amount,Category,Account\n" +
+            "05/11/2026,Day first,100,Food,Cash\n" +
+            "3-11-2026,Dashes,200,Food,Cash\n" +
+            "02 Nov 2026,Written month,300,Food,Cash\n" +
+            "2026-11-01,ISO,400,Food,Cash\n" +
+            "13/13/2026,Impossible,500,Food,Cash\n";
+
+        var result = await api.Upload("/api/expenses/import/csv", "transactions.csv", csv);
+        Assert.Equal(4, result["importedSuccessfully"]!.GetValue<int>());
+        Assert.Contains("13/13/2026", result["errors"]![0]!["reason"]!.GetValue<string>());
+
+        var dates = (await api.Get("/api/expenses?month=2026-11"))["rows"]!.AsArray()
+            .ToDictionary(r => r!["description"]!.GetValue<string>(), r => r!["date"]!.GetValue<string>());
+        Assert.Equal("2026-11-05", dates["Day first"]);
+        Assert.Equal("2026-11-03", dates["Dashes"]);
+        Assert.Equal("2026-11-02", dates["Written month"]);
+        Assert.Equal("2026-11-01", dates["ISO"]);
     }
 
     [Fact]
@@ -158,7 +188,7 @@ public class ImportAndProtectionTests
         Assert.Equal("Too many attempts. Wait a minute and try again.", (await limited.Content.ReadFromJsonAsync<JsonObject>())!["error"]!.GetValue<string>());
 
         // Registration counts toward the same limit; another client behind the same edge has its own.
-        var register = new { email = $"u{Guid.NewGuid():N}@example.com", password = "secret123" };
+        var register = new { email = $"u{Guid.NewGuid():N}@example.com", password = ApiFixture.Password };
         Assert.Equal(HttpStatusCode.TooManyRequests, (await Send("/api/auth/register", register, "198.51.100.7, 192.0.2.10")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Send("/api/auth/login", login, "198.51.100.8, 192.0.2.10")).StatusCode);
     }

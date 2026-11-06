@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using ExpenseTracker.Api.Ledger;
+using ExpenseTracker.Api.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,12 +21,59 @@ public sealed class FakeClock : IClock
     public DateTime UtcNow { get; set; } = new(2026, 11, 15, 7, 0, 0, DateTimeKind.Utc);
 }
 
+// Keeps what the app would have emailed. Emails leave through a background queue, so tests wait for them.
+public sealed class FakeEmailSender : IEmailSender
+{
+    private readonly ConcurrentQueue<EmailMessage> _sent = new();
+
+    public bool CanDeliver => true;
+
+    public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+    {
+        _sent.Enqueue(message);
+        return Task.CompletedTask;
+    }
+
+    public List<EmailMessage> To(string address) => _sent.Where(m => m.To == address).ToList();
+
+    // The `count`th email to `to` whose subject contains `subject`.
+    public async Task<EmailMessage> WaitForAsync(string to, string subject, int count = 1)
+    {
+        for (var i = 0; i < 250; i++)
+        {
+            var found = To(to).Where(m => m.Subject.Contains(subject)).ToList();
+            if (found.Count >= count) return found[count - 1];
+            await Task.Delay(20);
+        }
+        throw new Xunit.Sdk.XunitException($"No email \"{subject}\" (#{count}) reached {to}");
+    }
+
+    public static string LinkIn(EmailMessage message) => Regex.Match(message.Text, @"https?://\S+").Value;
+
+    public static string TokenIn(EmailMessage message) =>
+        Uri.UnescapeDataString(Regex.Match(message.Text, @"[?&]token=([^\s&]+)").Groups[1].Value);
+}
+
+public sealed class FakeBreaches : IBreachedPasswordChecker
+{
+    // Passes every other rule, so only the breach check can refuse it.
+    public const string Leaked = "Leaked-Pa55word-2019";
+
+    public Task<bool> IsBreachedAsync(string password, CancellationToken ct = default) => Task.FromResult(password == Leaked);
+}
+
 // One Postgres container and one app for the whole integration suite; every test signs up its own user.
 public sealed class ApiFixture : IAsyncLifetime
 {
+    // Passes the password rules (8+ characters, no spaces, not common or breached).
+    public const string Password = "Tr4ck-my-rupees";
+    public const string PublicUrl = "https://expense-tracker.test";
+    public const string JwtKey = "integration-test-signing-key-0123456789abcdefghij";
+
     private readonly PostgreSqlContainer _db = new PostgreSqlBuilder().WithImage("postgres:16-alpine").Build();
     public WebApplicationFactory<Program> Factory { get; private set; } = null!;
     public FakeClock Clock { get; } = new();
+    public FakeEmailSender Emails { get; } = new();
     public string ConnectionString => _db.GetConnectionString();
 
     public async Task InitializeAsync()
@@ -41,13 +91,18 @@ public sealed class ApiFixture : IAsyncLifetime
             b.UseEnvironment("Testing");
             if (webRoot != null) b.UseSetting(WebHostDefaults.WebRootKey, webRoot);
             b.UseSetting("ConnectionStrings:DefaultConnection", _db.GetConnectionString());
-            b.UseSetting("Jwt:Key", "integration-test-signing-key-0123456789abcdefghij");
+            b.UseSetting("Jwt:Key", JwtKey);
             b.UseSetting("BackgroundJobs:Enabled", "false");
             b.UseSetting("RateLimiting:AuthPerMinute", authPerMinute.ToString());
+            b.UseSetting("App:PublicUrl", PublicUrl);
             b.ConfigureServices(services =>
             {
                 services.RemoveAll<IClock>();
                 services.AddSingleton<IClock>(Clock);
+                services.RemoveAll<IEmailSender>();
+                services.AddSingleton<IEmailSender>(Emails);
+                services.RemoveAll<IBreachedPasswordChecker>();
+                services.AddSingleton<IBreachedPasswordChecker, FakeBreaches>();
             });
         });
 
@@ -57,14 +112,15 @@ public sealed class ApiFixture : IAsyncLifetime
         await _db.DisposeAsync();
     }
 
-    public async Task<Api> NewUserAsync()
+    public async Task<Api> NewUserAsync(string? displayName = null)
     {
         var client = Factory.CreateClient();
-        var res = await client.PostAsJsonAsync("/api/auth/register", new { email = $"u{Guid.NewGuid():N}@example.com", password = "secret123" });
+        var email = $"u{Guid.NewGuid():N}@example.com";
+        var res = await client.PostAsJsonAsync("/api/auth/register", new { email, password = Password, displayName = displayName ?? "" });
         res.EnsureSuccessStatusCode();
         var token = (await res.Content.ReadFromJsonAsync<JsonObject>())!["token"]!.GetValue<string>();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        var api = new Api(client);
+        var api = new Api(client) { Email = email };
         api.Me = await api.Get("/api/me");
         api.Categories = (await api.Get("/api/categories")).AsArray()
             .ToDictionary(c => c!["name"]!.GetValue<string>(), c => c!["id"]!.GetValue<int>());
@@ -80,6 +136,7 @@ public class ApiCollection : ICollectionFixture<ApiFixture>
 public sealed class Api
 {
     public HttpClient Http { get; }
+    public string Email { get; set; } = string.Empty;
     public JsonNode Me { get; set; } = null!;
     public Dictionary<string, int> Categories { get; set; } = new();
 

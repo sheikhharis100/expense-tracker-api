@@ -13,10 +13,10 @@ import {
 import { ApiError } from '../api/client';
 import { queuedMessage, useCreateOrQueue } from '../api/offline';
 import type { Category, Column, ExpenseRow, TxKind, TxStatus } from '../api/types';
-import { parseAmounts } from '../lib/amounts';
 import { entryDiffs, isExpenseRow, type EntryDraft } from '../lib/conflict';
 import { useToday } from '../lib/dates';
 import { money } from '../lib/format';
+import { checkAmount, checkCustomValue, checkDate, firstError, LIMITS, MAX_DATE, MIN_DATE } from '../lib/validate';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 import { toast } from './Toast';
@@ -63,17 +63,36 @@ export function EntrySheet({
 
   const effectiveStatus: TxStatus = kind === 'Refund' ? 'Paid' : date > today ? 'Planned' : status;
 
+  // Checked as you type, with the server's rules; Save stays off while anything is wrong.
+  const amountCheck = checkAmount(amount);
+  const amountError = amount.trim() ? firstError(amountCheck) : null;
+  const dateError = firstError(
+    checkDate(date, kind === 'Refund' ? { max: today, maxMessage: "A refund can't be dated after today" } : {}),
+  );
+  const categoryError = kind === 'Expense' && !categoryId ? 'Choose a category' : null;
+  const sameAccount = kind === 'Transfer' && toAccountId != null && toAccountId === accountId;
+  const customChecks = custom.map((c) => ({ column: c, check: checkCustomValue(c, values[c.key]) }));
+  const problem = firstError(
+    amountCheck,
+    dateError,
+    categoryError,
+    kind === 'Transfer' && !toAccountId && 'Choose the account the money moved to',
+    sameAccount && 'Choose two different accounts',
+    ...customChecks.map((c) => c.check),
+  );
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void save(row?.version);
   };
 
   const save = async (version?: number) => {
-    const parsed = parseAmounts(amount);
-    if (!parsed.ok || parsed.amounts.length !== 1) return setError(parsed.ok ? 'Enter one amount' : parsed.error);
+    if (problem || !amountCheck.ok || amountCheck.value == null) return setError(problem ?? 'Enter an amount');
+    const cleaned = { ...values };
+    for (const { column, check } of customChecks) if (check.ok) cleaned[column.key] = check.value;
     const input = {
       date,
-      amount: parsed.amounts[0],
+      amount: amountCheck.value,
       kind,
       status: effectiveStatus,
       categoryId: kind === 'Transfer' ? null : categoryId,
@@ -83,7 +102,7 @@ export function EntrySheet({
       accountId,
       transferAccountId: kind === 'Transfer' ? toAccountId : null,
       refundOfId: row?.refundOfId ?? null,
-      custom: values,
+      custom: cleaned,
     };
     try {
       if (row) await update.mutateAsync({ ...input, id: row.id, version });
@@ -123,13 +142,22 @@ export function EntrySheet({
 
         <label className="field field-amount">
           <span>Amount ({me.data?.currency ?? 'PKR'})</span>
-          <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
+          <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" aria-invalid={amountError ? true : undefined} />
+          {amountError && <small className="error-text">{amountError}</small>}
         </label>
 
         <div className="quick-row">
           <label className="field">
             <span>Date</span>
-            <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            <input
+              type="date"
+              value={date}
+              min={MIN_DATE}
+              max={kind === 'Refund' ? today : MAX_DATE}
+              aria-invalid={dateError ? true : undefined}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+            />
+            {dateError && <small className="error-text">{dateError}</small>}
           </label>
           {kind !== 'Refund' && (
             <label className="field">
@@ -172,7 +200,7 @@ export function EntrySheet({
             </label>
             <label className="field">
               <span>To</span>
-              <select value={toAccountId ?? ''} onChange={(e) => setToAccountId(Number(e.target.value) || null)}>
+              <select value={toAccountId ?? ''} aria-invalid={sameAccount ? true : undefined} onChange={(e) => setToAccountId(Number(e.target.value) || null)}>
                 <option value="">Choose…</option>
                 {(accounts.data ?? []).map((a) => (
                   <option key={a.id} value={a.id}>
@@ -180,13 +208,14 @@ export function EntrySheet({
                   </option>
                 ))}
               </select>
+              {sameAccount && <small className="error-text">Choose two different accounts</small>}
             </label>
           </div>
         )}
 
         <label className="field">
           <span>Description</span>
-          <input value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} />
+          <input value={description} maxLength={LIMITS.description} onChange={(e) => setDescription(e.target.value)} />
         </label>
 
         {kind !== 'Refund' && (
@@ -211,8 +240,14 @@ export function EntrySheet({
         {custom.length > 0 && (
           <fieldset className="field custom-fields">
             <legend>Custom fields</legend>
-            {custom.map((c) => (
-              <CustomInput key={c.key} column={c} value={values[c.key]} onChange={(v) => setValues({ ...values, [c.key]: v })} />
+            {customChecks.map(({ column: c, check }) => (
+              <CustomInput
+                key={c.key}
+                column={c}
+                value={values[c.key]}
+                error={check.ok ? null : check.error}
+                onChange={(v) => setValues({ ...values, [c.key]: v })}
+              />
             ))}
           </fieldset>
         )}
@@ -254,7 +289,7 @@ export function EntrySheet({
           )}
           <span className="spacer" />
           {/* While a conflict is open the choice is made in the panel, so Enter can't silently resubmit the old version. */}
-          <button className="btn btn-primary" disabled={create.isPending || update.isPending || !!conflict}>
+          <button className="btn btn-primary" disabled={create.isPending || update.isPending || !!conflict || !!problem} title={problem ?? undefined}>
             {create.isPending || update.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -320,8 +355,20 @@ function ConflictPanel({
   );
 }
 
-export function CustomInput({ column, value, onChange }: { column: Column; value: unknown; onChange: (v: unknown) => void }) {
+export function CustomInput({
+  column,
+  value,
+  error,
+  onChange,
+}: {
+  column: Column;
+  value: unknown;
+  error?: string | null;
+  onChange: (v: unknown) => void;
+}) {
   const label = <span>{column.name}</span>;
+  const hint = error ? <small className="error-text">{error}</small> : null;
+  const invalid = error ? true : undefined;
   switch (column.type) {
     case 'checkbox':
       return (
@@ -346,7 +393,8 @@ export function CustomInput({ column, value, onChange }: { column: Column; value
       return (
         <label className="field">
           {label}
-          <input type="date" value={typeof value === 'string' ? value : ''} onChange={(e) => onChange(e.target.value || null)} />
+          <input type="date" value={typeof value === 'string' ? value : ''} max={MAX_DATE} aria-invalid={invalid} onChange={(e) => onChange(e.target.value || null)} />
+          {hint}
         </label>
       );
     case 'money':
@@ -354,14 +402,21 @@ export function CustomInput({ column, value, onChange }: { column: Column; value
       return (
         <label className="field">
           {label}
-          <input inputMode="decimal" value={value == null ? '' : String(value)} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)} />
+          <input
+            inputMode="decimal"
+            value={value == null ? '' : String(value)}
+            aria-invalid={invalid}
+            onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+          />
+          {hint}
         </label>
       );
     default:
       return (
         <label className="field">
           {label}
-          <input value={typeof value === 'string' ? value : ''} maxLength={500} onChange={(e) => onChange(e.target.value || null)} />
+          <input value={typeof value === 'string' ? value : ''} maxLength={LIMITS.description} aria-invalid={invalid} onChange={(e) => onChange(e.target.value || null)} />
+          {hint}
         </label>
       );
   }
@@ -377,12 +432,26 @@ function RefundSheet({ row, onClose }: { row: ExpenseRow; onClose: () => void })
   const [error, setError] = useState<string | null>(null);
   const [requestId] = useState(newRequestId);
 
+  const left = Math.round((row.amount - row.refundedAmount) * 100) / 100;
+  const amountCheck = checkAmount(amount);
+  const amountError = amount.trim()
+    ? firstError(amountCheck, amountCheck.ok && (amountCheck.value ?? 0) > left && `That's more than the ${money(left)} left to refund`)
+    : null;
+  const dateError = firstError(
+    checkDate(date, {
+      min: row.date,
+      minMessage: "A refund can't be dated before the original expense",
+      max: today,
+      maxMessage: "A refund can't be dated after today",
+    }),
+  );
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const parsed = parseAmounts(amount);
-    if (!parsed.ok || parsed.amounts.length !== 1) return setError('Enter one amount');
+    const problem = firstError(amountCheck, amountError, dateError);
+    if (problem || !amountCheck.ok || amountCheck.value == null) return setError(problem ?? 'Enter an amount');
     try {
-      await refund.mutateAsync({ id: row.id, clientRequestId: requestId, date, amount: parsed.amounts[0], description });
+      await refund.mutateAsync({ id: row.id, clientRequestId: requestId, date, amount: amountCheck.value, description });
       toast('Refund saved', 'success');
       onClose();
     } catch (err) {
@@ -399,18 +468,20 @@ function RefundSheet({ row, onClose }: { row: ExpenseRow; onClose: () => void })
         </p>
         <label className="field field-amount">
           <span>Refund amount</span>
-          <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input inputMode="decimal" value={amount} aria-invalid={amountError ? true : undefined} onChange={(e) => setAmount(e.target.value)} />
+          {amountError && <small className="error-text">{amountError}</small>}
         </label>
         <label className="field">
           <span>Received on</span>
-          <input type="date" value={date} min={row.date} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} />
+          <input type="date" value={date} min={row.date} max={today} aria-invalid={dateError ? true : undefined} onChange={(e) => e.target.value && setDate(e.target.value)} />
+          {dateError && <small className="error-text">{dateError}</small>}
         </label>
         <label className="field">
           <span>Note</span>
-          <input value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} />
+          <input value={description} maxLength={LIMITS.description} onChange={(e) => setDescription(e.target.value)} />
         </label>
         {error && <p className="error-text" role="alert">{error}</p>}
-        <button className="btn btn-primary btn-block" disabled={refund.isPending}>
+        <button className="btn btn-primary btn-block" disabled={refund.isPending || !amountCheck.ok || !!amountError || !!dateError}>
           <Icon name="income" size={16} /> Save refund
         </button>
       </form>

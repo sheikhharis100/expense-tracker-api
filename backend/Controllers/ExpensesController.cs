@@ -7,7 +7,9 @@ namespace ExpenseTracker.Api.Controllers;
 [Route("api/expenses")]
 public class ExpensesController : AppController
 {
-    private const long MaxImportBytes = 5 * 1024 * 1024;
+    public const long MaxImportBytes = 5 * 1024 * 1024;
+    // Room for the multipart wrapping around the file, so a file just under the limit still gets through.
+    private const long MultipartAllowance = 64 * 1024;
 
     private readonly ExpenseService _expenses;
     private readonly AnalyticsService _analytics;
@@ -25,8 +27,12 @@ public class ExpensesController : AppController
     }
 
     [HttpGet]
-    public async Task<ActionResult<ExpenseListDto>> List([FromQuery] ExpenseFilterDto filter) =>
-        YearMonth.TryParse(filter.Month, out var ym) ? Ok(await _expenses.ListAsync(UserId, ym, filter)) : BadMonth();
+    public async Task<ActionResult<ExpenseListDto>> List([FromQuery] ExpenseFilterDto filter)
+    {
+        if (!YearMonth.TryParse(filter.Month, out var ym)) return BadMonth();
+        if (ExpenseService.FilterError(filter) is { } error) return Error(error);
+        return Ok(await _expenses.ListAsync(UserId, ym, filter));
+    }
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ExpenseRowDto>> Get(int id) =>
@@ -77,7 +83,7 @@ public class ExpensesController : AppController
     [HttpPut("notes")]
     public async Task<ActionResult> Note(DayNoteUpdateDto dto)
     {
-        await _expenses.SetNoteAsync(UserId, dto.Date, dto.Text);
+        if (await _expenses.SetNoteAsync(UserId, dto.Date, dto.Text) is { } error) return Error(error);
         await _notifier.NotifyAsync(UserId, LedgerScopes.Notes, YearMonth.Of(dto.Date));
         return NoContent();
     }
@@ -86,24 +92,25 @@ public class ExpensesController : AppController
 
     // Google Sheets → Daily Log tab → File → Download → CSV.
     [HttpPost("import/sheet")]
-    [RequestSizeLimit(MaxImportBytes)]
-    public async Task<ActionResult<SheetImportResultDto>> ImportSheet(IFormFile file)
+    [RequestSizeLimit(MaxImportBytes + MultipartAllowance)]
+    public async Task<ActionResult<SheetImportResultDto>> ImportSheet(IFormFile? file)
     {
-        if (file == null || file.Length == 0) return Error("No file uploaded");
-        using var stream = file.OpenReadStream();
+        if (await FileError(file) is { } error) return Error(error);
+        using var stream = file!.OpenReadStream();
         var result = await _sheet.ImportAsync(UserId, stream);
-        if (result.DaysImported > 0 || result.SalariesImported > 0) await _notifier.NotifyAsync(UserId, LedgerScopes.Import);
+        if (result.DaysImported > 0 || result.SalariesImported > 0 || result.OtherIncomeImported > 0) await _notifier.NotifyAsync(UserId, LedgerScopes.Import);
         return Ok(result);
     }
 
     // CSV with Date, Description, Amount, Category, Account columns (the original import format).
     [HttpPost("import/csv")]
-    [RequestSizeLimit(MaxImportBytes)]
-    public async Task<ActionResult<CsvImportResponseDto>> ImportCsv(IFormFile file)
+    [RequestSizeLimit(MaxImportBytes + MultipartAllowance)]
+    public async Task<ActionResult<CsvImportResponseDto>> ImportCsv(IFormFile? file)
     {
-        if (file == null || file.Length == 0) return Error("No file uploaded");
-        using var stream = file.OpenReadStream();
+        if (await FileError(file) is { } error) return Error(error);
+        using var stream = file!.OpenReadStream();
         var result = await _csv.ImportTransactionsAsync(UserId, stream);
+        if (result.Error != null) return Error(result.Error);
         if (result.ImportedSuccessfully > 0) await _notifier.NotifyAsync(UserId, LedgerScopes.Import);
         return Ok(new CsvImportResponseDto
         {
@@ -112,6 +119,25 @@ public class ExpensesController : AppController
             Skipped = result.Skipped,
             Errors = result.Errors.Select(e => new CsvImportErrorDto { Row = e.Row, Reason = e.Reason }).ToList()
         });
+    }
+
+    // Imports take a .csv export under 5 MB. A spreadsheet renamed to .csv is binary (an .xlsx is a zip), so a
+    // NUL byte near the start gives it away.
+    private static async Task<string?> FileError(IFormFile? file)
+    {
+        if (file == null || file.Length == 0) return "Choose a .csv file to import.";
+        if (file.Length > MaxImportBytes) return $"The file is too large; the limit is {MaxImportBytes / (1024 * 1024)} MB. Export just the tab you need.";
+        var extension = Path.GetExtension(file.FileName);
+        var csvType = file.ContentType?.StartsWith("text/csv", StringComparison.OrdinalIgnoreCase) == true;
+        if (!extension.Equals(".csv", StringComparison.OrdinalIgnoreCase) && !csvType)
+            return "Upload a .csv file (in Google Sheets: File → Download → Comma-separated values).";
+
+        var head = new byte[Math.Min(8192, file.Length)];
+        await using var stream = file.OpenReadStream();
+        var read = await stream.ReadAsync(head);
+        return head.AsSpan(0, read).IndexOf((byte)0) >= 0
+            ? "That file isn't a CSV. In Google Sheets use File → Download → Comma-separated values."
+            : null;
     }
 }
 
@@ -158,8 +184,11 @@ public class ColumnsController : AppController
     }
 
     [HttpGet("layout/{table}/{month}")]
-    public async Task<ActionResult<LayoutDto>> Layout(string table, string month) =>
-        YearMonth.TryParse(month, out var ym) ? Ok(await _columns.LayoutAsync(UserId, table, ym)) : BadMonth();
+    public async Task<ActionResult<LayoutDto>> Layout(string table, string month)
+    {
+        if (table is not (ColumnService.ExpensesTable or ColumnService.DailyTable)) return NotFound(new { error = "Unknown table" });
+        return YearMonth.TryParse(month, out var ym) ? Ok(await _columns.LayoutAsync(UserId, table, ym)) : BadMonth();
+    }
 
     [HttpPut("layout/{table}/{month}")]
     public async Task<ActionResult> SaveLayout(string table, string month, LayoutUpdateDto dto)

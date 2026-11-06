@@ -166,7 +166,7 @@ public class BudgetService
     {
         var category = await _db.Categories.FirstOrDefaultAsync(c => c.Id == categoryId && c.UserId == userId);
         if (category == null || category.Type != "Expense") return "Choose a spending category.";
-        if (amount is decimal a && (a < 0 || !Money.HasValidScale(a) || a > Money.Max)) return "Budget must be zero or more with at most 2 decimals.";
+        if (amount is decimal a && InputRules.NonNegative(a, "Budget") is { } problem) return problem;
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         if (scope == "month")
@@ -250,8 +250,11 @@ public class MonthService
 
     public async Task<ServiceResult<MonthSettingDto>> SaveAsync(int userId, YearMonth month, MonthSettingInputDto dto)
     {
-        if (dto.ReservedSavings < 0 || !Money.HasValidScale(dto.ReservedSavings)) return ServiceResult<MonthSettingDto>.Fail("Reserved savings must be zero or more.");
-        if (dto.OpeningBalance is decimal o && (!Money.HasValidScale(o) || Math.Abs(o) > Money.Max)) return ServiceResult<MonthSettingDto>.Fail("Opening balance allows at most 2 decimals.");
+        var note = InputRules.Clean(dto.Note);
+        var problem = InputRules.NonNegative(dto.ReservedSavings, "Reserved savings")
+            ?? (dto.OpeningBalance is decimal o ? InputRules.Signed(o, "Opening balance") : null)
+            ?? InputRules.Text(note, InputRules.NoteLength, "Note");
+        if (problem != null) return ServiceResult<MonthSettingDto>.Fail(problem);
 
         var s = await _db.MonthSettings.FirstOrDefaultAsync(m => m.UserId == userId && m.Year == month.Year && m.Month == month.Month);
         if (s == null)
@@ -265,7 +268,7 @@ public class MonthService
         }
         s.OpeningBalance = dto.OpeningBalance;
         s.ReservedSavings = dto.ReservedSavings;
-        s.Note = dto.Note.Trim();
+        s.Note = note;
         try
         {
             await _db.SaveChangesAsync();

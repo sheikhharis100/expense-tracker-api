@@ -92,10 +92,11 @@ public class RecurringService
         var user = await _db.Users.FirstAsync(u => u.Id == userId);
         var today = LocalCalendar.Today(_clock, user.TimeZone);
         var paidOn = date ?? (occurrence.DueDate <= today ? occurrence.DueDate : today);
+        if (InputRules.Date(paidOn, "Payment date") is { } dateError) return new PayResult(dateError, null, false);
         if (paidOn > today) return new PayResult("A payment can't be dated in the future; leave it planned until it's paid.", null, false);
 
         var value = amount ?? occurrence.Amount;
-        if (!Money.IsValidAmount(value)) return new PayResult("Amount must be greater than zero with at most 2 decimals.", null, false);
+        if (InputRules.Amount(value) is { } amountError) return new PayResult(amountError, null, false);
 
         var item = occurrence.RecurringItem;
         try

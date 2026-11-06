@@ -20,7 +20,7 @@ public class SummaryController : AppController
 
     [HttpGet("year/{year:int}")]
     public async Task<ActionResult<AnnualSummaryDto>> Year(int year) =>
-        year is >= 2000 and <= 3000 ? Ok(await _summary.YearAsync(UserId, year)) : Error("Year out of range");
+        IsValidYear(year) ? Ok(await _summary.YearAsync(UserId, year)) : BadYear();
 }
 
 [Route("api/months/{month}")]
@@ -59,6 +59,7 @@ public class MonthsController : AppController
     public async Task<ActionResult<MonthCopyResultDto>> Copy(string month, MonthCopyDto dto)
     {
         if (!YearMonth.TryParse(month, out var ym)) return BadMonth();
+        if (InputRules.Month(dto.From, "The month to copy from") is { } fromError) return Error(fromError);
         if (dto.From == ym) return Error("Choose a different month to copy from.");
         var result = new MonthCopyResultDto();
         if (dto.Layout) result.LayoutsCopied = await _columns.CopyLayoutsAsync(UserId, dto.From, ym);
@@ -116,6 +117,7 @@ public class ExportsController : AppController
     {
         if (!YearMonth.TryParse(month, out var ym)) return BadMonth();
         if (format is not ("xlsx" or "csv")) return Error("format must be xlsx or csv");
+        if (part is not ("summary" or "entries" or "income" or "categories")) return Error("part must be summary, entries, income or categories");
         if (basis is not ("budget-month" or "cash-flow")) return Error("basis must be budget-month or cash-flow");
         var file = await _exports.MonthAsync(UserId, ym, format, part, basis);
         return File(file.Content, file.ContentType, file.FileName);
@@ -124,6 +126,7 @@ public class ExportsController : AppController
     [HttpGet("year/{year:int}")]
     public async Task<ActionResult> Year(int year, [FromQuery] string format = "xlsx")
     {
+        if (!IsValidYear(year)) return BadYear();
         if (format is not ("xlsx" or "csv")) return Error("format must be xlsx or csv");
         var file = await _exports.YearAsync(UserId, year, format);
         return File(file.Content, file.ContentType, file.FileName);

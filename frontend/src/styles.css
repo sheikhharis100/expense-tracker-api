@@ -19,8 +19,9 @@
   --accent: #2a78d6;
   --accent-ink: #1c5cab;
   --accent-track: #cde2fb;
-  --editable: #fff7df;
-  --editable-hover: #ffefc2;
+  /* The sheet's "yellow = you type here", kept as a light warm tint so a full grid doesn't look heavy. */
+  --editable: #fffbef;
+  --editable-hover: #fff2cc;
   --calc: #f3f6f5;
   --today: #e1f6ec;
   --good: #0a7a3d;
@@ -34,46 +35,46 @@
   --plan-wash: #ebebfd;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.06);
   --radius: 18px;
+  --gutter: clamp(16px, 2.2vw, 40px);
   --font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #070b14;
-    --glow-1: rgba(16, 185, 129, 0.16);
-    --glow-2: rgba(99, 102, 241, 0.16);
-    --surface: #0f1624;
-    --surface-2: #162033;
-    --surface-3: #1d2a40;
-    --ink: #f3f6fb;
-    --ink-2: #b6c1d4;
-    --ink-muted: #7d8ba4;
-    --grid: #1d2a40;
-    --axis: #2b3b58;
-    --border: rgba(255, 255, 255, 0.08);
-    --brand: #10b981;
-    --brand-strong: #34d399;
-    --brand-ink: #6ee7b7;
-    --brand-wash: rgba(16, 185, 129, 0.14);
-    --accent: #3987e5;
-    --accent-ink: #86b6ef;
-    --accent-track: #184f95;
-    --editable: rgba(251, 191, 36, 0.07);
-    --editable-hover: rgba(251, 191, 36, 0.13);
-    --calc: #121b2b;
-    --today: rgba(16, 185, 129, 0.1);
-    --good: #34d399;
-    --good-wash: rgba(52, 211, 153, 0.14);
-    --warning: #fbbf24;
-    --warning-wash: rgba(251, 191, 36, 0.14);
-    --critical: #f87171;
-    --critical-ink: #fca5a5;
-    --critical-wash: rgba(248, 113, 113, 0.14);
-    --plan: #a5b4fc;
-    --plan-wash: rgba(129, 140, 248, 0.16);
-    --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
-  }
+/* Set on <html> by index.html and lib/theme.ts: the user's choice, or the device setting. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #070b14;
+  --glow-1: rgba(16, 185, 129, 0.16);
+  --glow-2: rgba(99, 102, 241, 0.16);
+  --surface: #0f1624;
+  --surface-2: #162033;
+  --surface-3: #1d2a40;
+  --ink: #f3f6fb;
+  --ink-2: #b6c1d4;
+  --ink-muted: #7d8ba4;
+  --grid: #1d2a40;
+  --axis: #2b3b58;
+  --border: rgba(255, 255, 255, 0.08);
+  --brand: #10b981;
+  --brand-strong: #34d399;
+  --brand-ink: #6ee7b7;
+  --brand-wash: rgba(16, 185, 129, 0.14);
+  --accent: #3987e5;
+  --accent-ink: #86b6ef;
+  --accent-track: #184f95;
+  --editable: rgba(251, 191, 36, 0.07);
+  --editable-hover: rgba(251, 191, 36, 0.13);
+  --calc: #121b2b;
+  --today: rgba(16, 185, 129, 0.1);
+  --good: #34d399;
+  --good-wash: rgba(52, 211, 153, 0.14);
+  --warning: #fbbf24;
+  --warning-wash: rgba(251, 191, 36, 0.14);
+  --critical: #f87171;
+  --critical-ink: #fca5a5;
+  --critical-wash: rgba(248, 113, 113, 0.14);
+  --plan: #a5b4fc;
+  --plan-wash: rgba(129, 140, 248, 0.16);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -256,12 +257,25 @@ kbd {
   background: color-mix(in srgb, var(--page) 80%, transparent);
   backdrop-filter: blur(14px) saturate(1.4);
   border-bottom: 1px solid var(--border);
+  /* An iPhone home-screen app in the dark theme draws under the status bar; keep the bar's content below it. */
+  padding-top: env(safe-area-inset-top);
 }
 
+.theme-toggle {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--ink-2);
+}
+
+.theme-toggle:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+/* The app uses the whole window at every size; only the side padding grows on big screens. */
 .topbar-inner {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 10px 24px;
+  padding: 10px var(--gutter);
   display: flex;
   align-items: center;
   gap: 20px;
@@ -352,9 +366,7 @@ kbd {
 }
 
 .main {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 18px 24px 110px;
+  padding: 18px var(--gutter) 110px;
 }
 
 .page,
@@ -802,6 +814,8 @@ kbd {
 
 .segmented {
   display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
   padding: 3px;
   gap: 3px;
   border-radius: 12px;
@@ -951,6 +965,21 @@ kbd {
 
 .grid-2-wide-right {
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr);
+}
+
+/* Cards that read better side by side once the screen is wide enough (Settings, Salary & Income). */
+.wide-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 1200px) {
+  .wide-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
 }
 
 .stack {
@@ -1237,6 +1266,18 @@ kbd {
   margin: 0;
 }
 
+/* Two tiles per row on a phone: the total gets its own full row instead of sitting alone on half of one. */
+@media (max-width: 520px) {
+  .tiles .tile-total:nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+.budget-table .row-toggle td {
+  padding-top: 10px;
+  padding-bottom: 4px;
+}
+
 .tile {
   --tone: var(--brand);
   position: relative;
@@ -1392,6 +1433,17 @@ kbd {
   font-size: 12px;
   font-weight: 450;
   color: var(--ink-muted);
+}
+
+/* A breakdown line under the row above it (e.g. each other-income source). */
+.statement .row-sub th {
+  padding-left: 22px;
+  font-weight: 450;
+  color: var(--ink-2);
+}
+
+.statement .row-sub td {
+  color: var(--ink-2);
 }
 
 .group-row th,
@@ -1616,6 +1668,24 @@ tfoot .sticky-col {
 
 .row-today .date-weekday {
   display: none;
+}
+
+/* Phones: the weekday goes under the date, so the date column takes less of the screen and more categories fit. */
+@media (max-width: 480px) {
+  .date-btn {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .date-weekday {
+    font-size: 11px;
+  }
+
+  .row-today .date-day::after {
+    display: block;
+    margin-left: 0;
+  }
 }
 
 .row-future .date-day,
@@ -2468,17 +2538,238 @@ tfoot .sticky-col {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 24px 16px;
+  padding: 32px 20px;
+}
+
+/* A computer: the branded panel and the form side by side in one rounded frame. */
+.auth-shell {
+  width: 100%;
+  max-width: 980px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  border-radius: 28px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 30px 80px rgba(16, 24, 40, 0.12);
+}
+
+.auth-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 40px;
+  color: #fff;
+  background: linear-gradient(140deg, #065f46 0%, #047857 32%, #0f766e 64%, #155e75 100%);
+}
+
+.auth-hero::before,
+.auth-hero::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.auth-hero::before {
+  width: 420px;
+  height: 420px;
+  right: -160px;
+  top: -180px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 65%);
+}
+
+.auth-hero::after {
+  width: 360px;
+  height: 360px;
+  left: -120px;
+  bottom: -200px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.25), transparent 65%);
+}
+
+.auth-hero > * {
+  position: relative;
+}
+
+.auth-hero-brand {
+  color: #fff;
+  font-size: 17px;
+}
+
+.auth-hero-title {
+  margin: 18px 0 0;
+  font-size: 36px;
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.auth-hero-text {
+  margin: 0;
+  max-width: 36ch;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.55;
+}
+
+.auth-points {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.auth-points li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-points .icon {
+  flex: none;
+  box-sizing: content-box;
+  padding: 7px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.auth-preview {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.auth-preview-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.auth-preview-value {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.auth-preview-value small {
+  font-size: 14px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.auth-preview-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.auth-preview-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.auth-preview-note {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .auth-card {
   width: 100%;
-  max-width: 420px;
-  padding: 28px;
+  align-self: center;
+  padding: 40px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.auth-brand {
-  margin-bottom: 8px;
+/* A phone: the panel becomes a banner and the form card overlaps its bottom edge. */
+@media (max-width: 860px) {
+  .auth {
+    place-items: start center;
+    padding: 0 0 28px;
+  }
+
+  .auth-shell {
+    max-width: 520px;
+    grid-template-columns: 1fr;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .auth-hero {
+    gap: 8px;
+    padding: calc(26px + env(safe-area-inset-top)) 22px 64px;
+    border-radius: 0 0 28px 28px;
+  }
+
+  .auth-hero-title {
+    margin-top: 14px;
+    font-size: 26px;
+  }
+
+  .auth-hero-text {
+    font-size: 14px;
+  }
+
+  .auth-points,
+  .auth-preview {
+    display: none;
+  }
+
+  .auth-card {
+    position: relative;
+    z-index: 1;
+    width: auto;
+    margin: -40px 16px 0;
+    padding: 24px 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+}
+
+/* The file picker's button matches the app's buttons instead of the browser's grey default. */
+input[type='file'] {
+  font: inherit;
+  color: var(--ink-2);
+}
+
+input[type='file']::file-selector-button {
+  margin-right: 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+input[type='file']::file-selector-button:hover {
+  background: var(--surface-3);
+}
+
+/* Edge and IE draw their own "show password" eye; the field already has one. */
+input[type='password']::-ms-reveal,
+input[type='password']::-ms-clear {
+  display: none;
 }
 
 .auth-form {
@@ -2739,9 +3030,10 @@ body.is-resizing .col-resize {
   }
 }
 
-/* Narrow phones: make room for the sync badge by dropping the nav icons while it shows. */
+/* Narrow phones: the waiting-entries badge takes the logo's and the live dot's room (the tabs keep their icons). */
 @media (max-width: 420px) {
-  .topbar-inner:has(.sync-badge) .nav-icon {
+  .topbar-inner:has(.sync-badge) .brand,
+  .topbar-inner:has(.sync-badge) .live-badge {
     display: none;
   }
 }
@@ -2801,6 +3093,39 @@ body.is-resizing .col-resize {
   font-size: 18px;
   cursor: pointer;
   padding: 0 4px;
+}
+
+/* ---------- Scrolling strips ---------- */
+
+/* On narrow screens the month and section strips scroll sideways; soft edges show there's more instead of a hard cut. */
+@media (max-width: 720px) {
+  .month-tabs,
+  .section-tabs {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 28px), transparent);
+    padding-inline: 6px;
+    scroll-padding-inline: 28px;
+  }
+}
+
+/* ---------- Phone top bar ---------- */
+
+/* Room for every control on a phone: the open tab keeps its label, the others show just their icon, and the
+   live badge shows its dot. The labels stay readable to screen readers. */
+@media (max-width: 480px) {
+  .nav-link:not(.active) .nav-text,
+  .live-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .nav-link:not(.active) {
+    padding: 8px;
+  }
 }
 
 /* ---------- Responsive ---------- */
@@ -2986,3 +3311,278 @@ body.is-resizing .col-resize {
 .wake-offline {
   background: var(--warning-wash);
 }
+
+/* ---------- Profile & account ---------- */
+
+.pw-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pw-label-row > label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.pw-input {
+  position: relative;
+}
+
+.pw-input input {
+  padding-right: 48px !important;
+}
+
+.pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 36px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.pw-toggle:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.pw-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.pw-help {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pw-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.pw-checks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pw-checks .pw-ok {
+  color: var(--good);
+}
+
+.pw-checks .pw-bad {
+  color: var(--critical-ink);
+}
+
+.pw-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.pw-bars {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  max-width: 180px;
+}
+
+.pw-bars span {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+
+.pw-meter[data-score='0'] .pw-bars .on,
+.pw-meter[data-score='1'] .pw-bars .on {
+  background: var(--critical);
+}
+
+.pw-meter[data-score='2'] .pw-bars .on {
+  background: var(--warning);
+}
+
+.pw-meter[data-score='3'] .pw-bars .on {
+  background: var(--brand);
+}
+
+.pw-meter[data-score='4'] .pw-bars .on {
+  background: var(--good);
+}
+
+.auth-sent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--brand-wash);
+}
+
+.auth-sent .icon {
+  color: var(--brand-ink);
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #0ea5e9 60%, #6366f1);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.avatar-lg {
+  width: 64px;
+  height: 64px;
+  font-size: 24px;
+}
+
+.avatar-link {
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+  text-decoration: none;
+}
+
+.avatar-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.avatar-link.active .avatar {
+  box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--brand);
+}
+
+.profile-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+}
+
+.profile-who {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.profile-name {
+  font-size: 20px;
+}
+
+.profile-email {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-2);
+}
+
+.profile-address {
+  overflow-wrap: anywhere;
+}
+
+.profile-stats {
+  display: flex;
+  gap: 24px;
+  margin: 0;
+}
+
+.profile-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-stats dt {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.profile-stats dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.danger-zone {
+  border-color: color-mix(in srgb, var(--critical) 35%, transparent);
+}
+
+.danger-zone h2 {
+  color: var(--critical-ink);
+}
+
+/* Fixed reds so white text stays readable in both themes. */
+.btn-danger {
+  background: #c62828;
+  border-color: transparent;
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #a51f1f;
+}
+
+@media (max-width: 720px) {
+  .avatar-link .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
+  }
+
+  .profile-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .avatar-lg {
+    width: 52px;
+    height: 52px;
+    font-size: 20px;
+  }
+
+  .profile-stats {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+}
+

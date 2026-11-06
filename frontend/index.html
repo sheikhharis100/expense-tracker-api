@@ -3,14 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#f3f7f6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#070b14" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f3f7f6" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <script>
+      // Applies the saved theme (lib/theme.ts) before the first paint, so the page never flashes the other one.
+      (function () {
+        var choice = null;
+        try {
+          choice = localStorage.getItem('expense-tracker.theme');
+        } catch (e) {}
+        var dark = choice === 'dark' || (choice !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#070b14' : '#f3f7f6');
+        document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').setAttribute('content', dark ? 'black-translucent' : 'default');
+      })();
+    </script>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Expenses" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M9 21h4V13H9zm5 0h4V9h-4zm5 0h4v-6h-4z' fill='%23fff'/%3E%3C/svg%3E" />
     <title>Expense Tracker</title>
   </head>

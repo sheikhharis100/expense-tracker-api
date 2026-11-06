@@ -17,8 +17,11 @@ import { SectionTitle, useWorkspace } from '../components/Workspace';
 import { parseSigned } from '../lib/amounts';
 import { dayLabel, shiftKey, ymLabel, ymLongLabel } from '../lib/dates';
 import { money, signed } from '../lib/format';
+import { checkAmount, checkDate, checkMonth, firstError, MAX_DATE, MIN_DATE } from '../lib/validate';
 
 const KINDS = ['Base', 'Allowance', 'Bonus', 'Overtime', 'Arrears', 'Deduction', 'Adjustment'] as const;
+// A saved salary may fund a month up to a year after it was earned (same limit as the server).
+const MAX_FUNDING_LAG = 12;
 
 const parseAmount = (text: string) => {
   const r = parseSigned(text);
@@ -63,7 +66,7 @@ function IncomeBody({ d }: { d: IncomeMonth }) {
           <dd>{money(d.otherIncomeReceived)}</dd>
           {d.expectedOtherIncome > 0 && <span className="tile-hint">+{money(d.expectedOtherIncome)} expected</span>}
         </div>
-        <div className="tile tile-avg">
+        <div className="tile tile-avg tile-total">
           <dt>Total income available</dt>
           <dd>{money(d.totalReceivedIncome)}</dd>
           <span className="tile-hint">received, for {ymLabel(ym)}</span>
@@ -76,23 +79,27 @@ function IncomeBody({ d }: { d: IncomeMonth }) {
         allocated to.
       </p>
 
-      {d.funding.length === 0 ? (
-        <NoSalary ym={ym} lag={d.salaryLagMonths} />
-      ) : (
-        d.funding.map((s) => <StatementCard key={s.earned} s={s} />)
-      )}
+      {/* Side by side on a wide screen, one after the other elsewhere. */}
+      <div className="wide-columns">
+        <div className="stack">
+          {d.funding.length === 0 ? (
+            <NoSalary ym={ym} lag={d.salaryLagMonths} />
+          ) : (
+            d.funding.map((s) => <StatementCard key={s.earned} s={s} />)
+          )}
 
-      {d.earnedThisMonth && d.earnedThisMonth.funded !== ym && (
-        <p className="muted small">
-          {ymLongLabel(ym)} salary ({money(d.earnedThisMonth.expectedNet)} expected) funds{' '}
-          <Link className="link" to={`/m/${d.earnedThisMonth.funded}/income`}>
-            {ymLongLabel(d.earnedThisMonth.funded)}
-          </Link>
-          .
-        </p>
-      )}
-
-      <OtherIncome d={d} />
+          {d.earnedThisMonth && d.earnedThisMonth.funded !== ym && (
+            <p className="muted small">
+              {ymLongLabel(ym)} salary ({money(d.earnedThisMonth.expectedNet)} expected) funds{' '}
+              <Link className="link" to={`/m/${d.earnedThisMonth.funded}/income`}>
+                {ymLongLabel(d.earnedThisMonth.funded)}
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+        <OtherIncome d={d} />
+      </div>
     </>
   );
 }
@@ -183,7 +190,13 @@ function StatementCard({ s }: { s: SalaryStatement }) {
             <li key={p.id}>
               <span className="entry-name">
                 {p.receivedDate ? dayLabel(p.receivedDate).day : ''} · {p.paymentMethod || 'Payment'}
-                <span className="muted small"> → {p.allocations.map((a) => `${ymLabel(a.month)} ${money(a.amount)}`).join(', ')}</span>
+                <span className="muted small">
+                  {' '}
+                  →{' '}
+                  {p.allocations.length === 1 && p.allocations[0].amount === p.amount
+                    ? ymLabel(p.allocations[0].month)
+                    : p.allocations.map((a) => `${ymLabel(a.month)} ${money(a.amount)}`).join(', ')}
+                </span>
                 {p.unallocated > 0 && <span className="badge badge-warn">{money(p.unallocated)} unallocated</span>}
               </span>
               <span className="num">{money(p.amount)}</span>
@@ -222,15 +235,25 @@ function StatementEditor({ s, onClose }: { s: SalaryStatement; onClose: () => vo
     return sum + (r.kind === 'Deduction' ? -Math.abs(v) : r.kind === 'Adjustment' ? v : Math.abs(v));
   }, 0);
 
+  // Same rules as the server, shown before saving.
+  const lineErrors = rows.map((r) => {
+    const parsed = parseSigned(r.text);
+    if (!parsed.ok) return `${r.label || r.kind}: ${parsed.error}`;
+    return r.kind !== 'Adjustment' && parsed.value < 0 ? `${r.kind} can't be negative; use an Adjustment for signed changes` : null;
+  });
+  const latestFunded = shiftKey(s.earned, MAX_FUNDING_LAG);
+  const problem = firstError(
+    checkMonth(funded, 'Funded month'),
+    funded < s.earned && "A salary can't fund a month before it was earned",
+    funded > latestFunded && `A salary can fund a month at most ${MAX_FUNDING_LAG} months after it was earned`,
+    ...lineErrors,
+    preview < 0 && "Deductions can't be more than the salary; the expected net would be negative",
+  );
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const components: SalaryComponent[] = [];
-    for (const r of rows) {
-      const amount = parseAmount(r.text);
-      if (Number.isNaN(amount)) return setError(`“${r.text}” isn't an amount`);
-      if (r.kind !== 'Adjustment' && amount < 0) return setError(`${r.kind} can't be negative; use an Adjustment for signed changes.`);
-      components.push({ kind: r.kind, label: r.label, amount });
-    }
+    if (problem) return setError(problem);
+    const components: SalaryComponent[] = rows.map((r) => ({ kind: r.kind, label: r.label, amount: parseAmount(r.text) }));
     save.mutate(
       { earned: s.earned, funded, note, components, version: s.id ? s.version : undefined },
       { onSuccess: () => (toast('Salary saved', 'success'), onClose()), onError: (err) => setError(err.message) },
@@ -242,7 +265,7 @@ function StatementEditor({ s, onClose }: { s: SalaryStatement; onClose: () => vo
       <form className="form-stack" onSubmit={submit}>
         <label className="field">
           <span>Funds budget month</span>
-          <input type="month" value={funded} min={s.earned} onChange={(e) => e.target.value && setFunded(e.target.value)} />
+          <input type="month" value={funded} min={s.earned} max={latestFunded} onChange={(e) => e.target.value && setFunded(e.target.value)} />
         </label>
         <div className="table-scroll">
           <table className="data-table edit-table">
@@ -268,7 +291,15 @@ function StatementEditor({ s, onClose }: { s: SalaryStatement; onClose: () => vo
                     <input value={r.label} aria-label="Label" maxLength={100} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
                   </td>
                   <td>
-                    <input className="num" inputMode="decimal" value={r.text} aria-label="Amount" onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+                    <input
+                      className="num"
+                      inputMode="decimal"
+                      value={r.text}
+                      aria-label="Amount"
+                      aria-invalid={lineErrors[i] ? true : undefined}
+                      title={lineErrors[i] ?? undefined}
+                      onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                    />
                   </td>
                   <td className="actions">
                     <button type="button" className="btn-ghost btn-round" aria-label="Duplicate row" onClick={() => setRows([...rows.slice(0, i + 1), { ...r }, ...rows.slice(i + 1)])}>
@@ -296,12 +327,12 @@ function StatementEditor({ s, onClose }: { s: SalaryStatement; onClose: () => vo
         <p className="preview">
           Expected net: <b>{money(preview, { dash: false })}</b>
         </p>
-        {error && <p className="error-text" role="alert">{error}</p>}
+        {(problem ?? error) && <p className="error-text" role="alert">{problem ?? error}</p>}
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary" disabled={save.isPending}>
+          <button className="btn btn-primary" disabled={save.isPending || !!problem}>
             {save.isPending ? 'Saving…' : 'Save salary'}
           </button>
         </div>
@@ -345,20 +376,36 @@ function ReceiptSheet({
   const [error, setError] = useState<string | null>(null);
   const [requestId] = useState(newRequestId);
 
+  // Checked as you type, with the server's rules.
+  const received = status === 'Received' || kind === 'Salary';
+  const amountCheck = checkAmount(amount);
+  const amountError = amount.trim() ? firstError(amountCheck) : null;
+  const dateError = firstError(
+    checkDate(date, {
+      label: received ? 'Received date' : 'Expected date',
+      max: received ? today : undefined,
+      maxMessage: kind === 'Salary' ? "A payment can't be dated after today" : "Received money can't be dated after today; mark it expected instead",
+    }),
+  );
+  const splitChecks = split ? allocations.map((a) => ({ month: a.month, monthCheck: checkMonth(a.month, 'Each month'), amount: checkAmount(a.text) })) : [];
+  const splitTotal = splitChecks.reduce((sum, c) => sum + (c.amount.ok ? c.amount.value ?? 0 : 0), 0);
+  const splitError = split
+    ? firstError(
+        allocations.length === 0 && 'Add a month to split into',
+        ...splitChecks.flatMap((c) => [c.monthCheck, c.amount]),
+        new Set(allocations.map((a) => a.month)).size !== allocations.length && 'Allocate to each month once',
+        amountCheck.ok && splitTotal > (amountCheck.value ?? 0) && `The split (${money(splitTotal)}) is more than the amount (${money(amountCheck.value)})`,
+      )
+    : null;
+  const problem = firstError(amountCheck, dateError, splitError);
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const value = parseAmount(amount);
-    if (!(value > 0)) return setError('Enter the amount');
+    if (problem || !amountCheck.ok || amountCheck.value == null) return setError(problem ?? 'Enter the amount');
+    const value = amountCheck.value;
     let allocs: Allocation[] | null = null;
     if (split) {
-      allocs = [];
-      for (const a of allocations) {
-        const v = parseAmount(a.text);
-        if (!(v > 0)) return setError('Each split needs an amount');
-        allocs.push({ month: a.month, amount: v });
-      }
-      const sum = allocs.reduce((s, a) => s + a.amount, 0);
-      if (sum > value) return setError(`The split (${money(sum)}) is more than the amount received (${money(value)}).`);
+      allocs = splitChecks.map((c) => ({ month: c.month, amount: c.amount.ok ? c.amount.value ?? 0 : 0 }));
     } else if (receipt) {
       allocs = [{ month: allocations[0]?.month ?? target, amount: value }];
     }
@@ -396,12 +443,21 @@ function ReceiptSheet({
         )}
         <label className="field field-amount">
           <span>Amount ({me.currency})</span>
-          <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+          <input inputMode="decimal" value={amount} aria-invalid={amountError ? true : undefined} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+          {amountError && <small className="error-text">{amountError}</small>}
         </label>
         <div className="quick-row">
           <label className="field">
             <span>{status === 'Expected' && kind === 'Other' ? 'Expected on' : 'Received on'}</span>
-            <input type="date" value={date} max={status === 'Received' || kind === 'Salary' ? today : undefined} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            <input
+              type="date"
+              value={date}
+              min={MIN_DATE}
+              max={received ? today : MAX_DATE}
+              aria-invalid={dateError ? true : undefined}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+            />
+            {dateError && <small className="error-text">{dateError}</small>}
           </label>
           <label className="field">
             <span>Received via</span>
@@ -447,10 +503,11 @@ function ReceiptSheet({
             <button type="button" className="btn btn-sm" onClick={() => setAllocations([...allocations, { month: shiftKey(allocations.at(-1)?.month ?? target, 1), text: '' }])}>
               <Icon name="plus" size={14} /> Another month
             </button>
+            {splitError && allocations.some((a) => a.text.trim()) && <small className="error-text">{splitError}</small>}
           </div>
         )}
         {error && <p className="error-text" role="alert">{error}</p>}
-        <button className="btn btn-primary btn-block btn-lg" disabled={pending}>
+        <button className="btn btn-primary btn-block btn-lg" disabled={pending || !!problem} title={problem ?? undefined}>
           {pending ? 'Saving…' : 'Save'}
         </button>
       </form>
@@ -482,7 +539,7 @@ function OtherIncome({ d }: { d: IncomeMonth }) {
                 {r.description || r.categoryName}
                 <span className="muted small">
                   {' '}
-                  · {r.categoryName} · {r.status === 'Expected' ? `expected ${r.expectedDate ? dayLabel(r.expectedDate).day : ''}` : dayLabel(r.receivedDate!).day}
+                  {r.description && r.description !== r.categoryName ? `· ${r.categoryName} ` : ''}· {r.status === 'Expected' ? `expected ${r.expectedDate ? dayLabel(r.expectedDate).day : ''}` : dayLabel(r.receivedDate!).day}
                 </span>
                 {r.status === 'Expected' && <span className="badge badge-plan">expected</span>}
               </span>

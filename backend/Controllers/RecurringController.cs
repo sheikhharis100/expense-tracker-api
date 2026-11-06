@@ -75,7 +75,7 @@ public class RecurringController : AppController
         if (!YearMonth.TryParse(from, out var fromMonth)) return BadMonth();
         var item = await _db.RecurringItems.FirstOrDefaultAsync(r => r.Id == id && r.UserId == UserId);
         if (item == null) return NotFound(new { error = "Not found" });
-        var error = await ValidateAsync(dto);
+        var error = await ValidateAsync(dto, item);
         if (error != null) return Error(error);
         if (dto.Version is uint v) _db.Entry(item).Property(r => r.Version).OriginalValue = v;
 
@@ -127,13 +127,15 @@ public class RecurringController : AppController
         var o = await _db.RecurringOccurrences.FirstOrDefaultAsync(x => x.Id == id && x.UserId == UserId);
         if (o == null) return NotFound(new { error = "Not found" });
         if (o.Status == OccurrenceStatus.Paid) return Error("This occurrence is paid; edit the linked transaction instead.");
-        if (!Money.IsValidAmount(dto.Amount)) return Error("Amount must be greater than zero with at most 2 decimals.");
+        var note = InputRules.Clean(dto.Note);
+        var problem = InputRules.Amount(dto.Amount) ?? InputRules.Date(dto.DueDate, "Due date") ?? InputRules.Text(note, InputRules.DescriptionLength, "Note");
+        if (problem != null) return Error(problem);
         if (YearMonth.Of(dto.DueDate) != new YearMonth(o.Year, o.Month)) return Error("The due date must stay in the same month.");
 
         _db.Entry(o).Property(x => x.Version).OriginalValue = dto.Version;
         o.Amount = dto.Amount;
         o.DueDate = dto.DueDate;
-        o.Note = dto.Note.Trim();
+        o.Note = note;
         o.IsOverridden = true;
         try
         {
@@ -188,16 +190,23 @@ public class RecurringController : AppController
     private async Task<RecurringOccurrence> Load(int id) =>
         await _db.RecurringOccurrences.AsNoTracking().Include(o => o.RecurringItem).ThenInclude(r => r.Category).FirstAsync(o => o.Id == id);
 
-    private async Task<string?> ValidateAsync(RecurringInputDto dto)
+    // `current` is the item being edited: it may keep a category that has since been archived.
+    private async Task<string?> ValidateAsync(RecurringInputDto dto, RecurringItem? current = null)
     {
-        if (!Money.IsValidAmount(dto.Amount)) return "Amount must be greater than zero with at most 2 decimals.";
+        var description = InputRules.Clean(dto.Description);
+        var problem = InputRules.Name(description, 200, "Name")
+            ?? InputRules.Amount(dto.Amount)
+            ?? InputRules.Month(dto.Start, "Start month")
+            ?? (dto.End is YearMonth e ? InputRules.Month(e, "End month") : null)
+            ?? InputRules.PaymentMethod(dto.PaymentMethod);
+        if (problem != null) return problem;
         if (dto.End is YearMonth end && end < dto.Start) return "The end month is before the start month.";
-        if (dto.PaymentMethod.Length > 0 && !PaymentMethods.All.Contains(dto.PaymentMethod)) return "Unknown payment method.";
         var wantType = dto.Kind == "Income" ? "Income" : "Expense";
         if (dto.CategoryId is int cid)
         {
             var category = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == cid && c.UserId == UserId);
-            if (category == null || category.Type != wantType) return $"Choose a {(wantType == "Income" ? "income" : "spending")} category.";
+            if (category == null || category.Type != wantType) return wantType == "Income" ? "Choose an income category." : "Choose a spending category.";
+            if (category.IsArchived && current?.CategoryId != cid) return $"“{category.Name}” is archived; restore it to use it.";
         }
         else if (wantType == "Expense")
         {
@@ -209,7 +218,7 @@ public class RecurringController : AppController
     private static void Apply(RecurringItem item, RecurringInputDto dto)
     {
         item.Kind = dto.Kind == "Income" ? "Income" : TxKind.Expense;
-        item.Description = dto.Description.Trim();
+        item.Description = InputRules.Clean(dto.Description);
         item.CategoryId = dto.CategoryId;
         item.Amount = dto.Amount;
         item.DayOfMonth = dto.DayOfMonth;

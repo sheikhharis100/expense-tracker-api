@@ -27,11 +27,12 @@ public class CategoriesController : ControllerBase
     public async Task<ActionResult<CategoryResponseDto>> CreateCategory(CategoryCreateDto dto)
     {
         var userId = AuthHelper.GetCurrentUserId(User);
-        var name = dto.Name.Trim();
+        var name = InputRules.Clean(dto.Name);
+        if (InputRules.Name(name, InputRules.NameLength) is { } nameError) return Error(nameError);
 
         var existing = await _context.Categories.Where(c => c.UserId == userId).ToListAsync();
         if (existing.Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-            return BadRequest("A category with this name already exists");
+            return Error(NameTaken(name));
 
         var category = new Category
         {
@@ -87,14 +88,15 @@ public class CategoriesController : ControllerBase
         if (category == null)
             return NotFound();
 
-        var name = dto.Name.Trim();
+        var name = InputRules.Clean(dto.Name);
+        if (InputRules.Name(name, InputRules.NameLength) is { } nameError) return Error(nameError);
         var nameTaken = await _context.Categories
             .AnyAsync(c => c.UserId == userId && c.Id != id && c.Name.ToLower() == name.ToLower());
         if (nameTaken)
-            return BadRequest("A category with this name already exists");
+            return Error(NameTaken(name));
 
-        if (category.Type != dto.Type && await _context.Transactions.AnyAsync(t => t.CategoryId == id))
-            return BadRequest("Can't switch between income and expense once a category has entries");
+        if (category.Type != dto.Type && await IsInUseAsync(id))
+            return Error("Can't switch between income and expense once a category has entries, income or recurring items.");
 
         if (dto.Version is uint version)
             _context.Entry(category).Property(c => c.Version).OriginalValue = version;
@@ -136,7 +138,7 @@ public class CategoriesController : ControllerBase
         var byId = categories.ToDictionary(c => c.Id);
 
         if (dto.OrderedIds.Distinct().Count() != dto.OrderedIds.Count || dto.OrderedIds.Any(id => !byId.ContainsKey(id)))
-            return BadRequest("Order must list each of your categories at most once");
+            return Error("Order must list each of your categories at most once");
 
         for (var i = 0; i < dto.OrderedIds.Count; i++)
             byId[dto.OrderedIds[i]].SortOrder = i;
@@ -158,7 +160,7 @@ public class CategoriesController : ControllerBase
         if (await _context.Transactions.AnyAsync(t => t.CategoryId == id)
             || await _context.IncomeReceipts.AnyAsync(r => r.CategoryId == id)
             || await _context.RecurringItems.AnyAsync(r => r.CategoryId == id))
-            return BadRequest("This category has entries. Archive it instead to hide it from new months.");
+            return Error("This category has entries. Archive it instead to hide it from new months.");
 
         _context.Categories.Remove(category);
         await _context.SaveChangesAsync();
@@ -167,8 +169,18 @@ public class CategoriesController : ControllerBase
         return NoContent();
     }
 
+    private BadRequestObjectResult Error(string message) => BadRequest(new { error = message });
+
+    private static string NameTaken(string name) => $"There's already a category called “{name}”.";
+
+    // Records that only make sense under the current type (an expense can't sit in an income category).
+    private async Task<bool> IsInUseAsync(int id) =>
+        await _context.Transactions.AnyAsync(t => t.CategoryId == id)
+        || await _context.IncomeReceipts.AnyAsync(r => r.CategoryId == id)
+        || await _context.RecurringItems.AnyAsync(r => r.CategoryId == id);
+
     private static string? NormalizeGroup(string? group) =>
-        string.IsNullOrWhiteSpace(group) ? null : group.Trim();
+        InputRules.Clean(group) is { Length: > 0 } cleaned ? cleaned : null;
 
     private static CategoryResponseDto MapToResponse(Category category, int transactionCount)
     {

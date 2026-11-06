@@ -19,6 +19,15 @@ public class SheetImportService
         _clock = clock;
     }
 
+    private const int MaxWarnings = 50;
+
+    private static void Warn(SheetImportResultDto result, string warning)
+    {
+        if (result.Warnings.Count < MaxWarnings) result.Warnings.Add(warning);
+    }
+
+    private static string Truncate(string text, int max) => text.Length > max ? text[..max].TrimEnd() : text;
+
     public async Task<SheetImportResultDto> ImportAsync(int userId, Stream stream)
     {
         using var reader = new StreamReader(stream);
@@ -28,13 +37,35 @@ public class SheetImportService
         {
             RowsRead = parsed.RowsRead,
             CellsSkipped = parsed.CellsSkipped,
-            Warnings = parsed.Warnings.Take(50).ToList()
+            Warnings = parsed.Warnings.Take(MaxWarnings).ToList()
         };
 
-        if (parsed.Days.Count == 0 && parsed.Salaries.Count == 0)
+        // Only money already spent is imported: days out of range are dropped, and future days keep just their remarks.
+        var user = await _context.Users.FirstAsync(u => u.Id == userId);
+        var today = LocalCalendar.Today(_clock, user.TimeZone);
+        var days = new List<SheetCsvParser.ParsedDay>();
+        foreach (var day in parsed.Days)
+        {
+            if (!InputRules.IsInRange(day.Date))
+            {
+                result.CellsSkipped += day.Cells.Count;
+                Warn(result, $"{day.Date:dd MMM yyyy}: dates must be between {InputRules.MinYear} and {InputRules.MaxYear}");
+                continue;
+            }
+            if (day.Date > today && day.Cells.Count > 0)
+            {
+                result.CellsSkipped += day.Cells.Count;
+                Warn(result, $"{day.Date:dd MMM yyyy} is after today; its amounts were skipped (plan future spending in the app)");
+                if (day.Note.Length > 0) days.Add(day with { Cells = new Dictionary<string, List<decimal>>() });
+                continue;
+            }
+            days.Add(day);
+        }
+        var salaries = parsed.Salaries.Where(s => YearMonth.IsValid(s.PayMonth.Year, s.PayMonth.Month)).ToList();
+
+        if (days.Count == 0 && salaries.Count == 0 && parsed.Incomes.Count == 0)
             return result;
 
-        var user = await _context.Users.FirstAsync(u => u.Id == userId);
         var account = await DefaultData.GetOrCreateDefaultAccountAsync(_context, user);
         var categories = await _context.Categories.Where(c => c.UserId == userId).ToListAsync();
 
@@ -42,14 +73,15 @@ public class SheetImportService
         foreach (var column in parsed.CategoryColumns.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             // Exact name first, then the old/new spelling of the same column ("Travel (InDrive)" = "Travel — InDrive").
-            var category = categories.FirstOrDefault(c => c.Type == "Expense" && c.Name.Equals(column, StringComparison.OrdinalIgnoreCase))
-                ?? categories.FirstOrDefault(c => c.Type == "Expense" && DefaultData.SameCategory(c.Name, column));
+            var name = Truncate(InputRules.Clean(column), InputRules.NameLength);
+            var category = categories.FirstOrDefault(c => c.Type == "Expense" && c.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                ?? categories.FirstOrDefault(c => c.Type == "Expense" && DefaultData.SameCategory(c.Name, name));
             if (category == null)
             {
                 category = new Category
                 {
                     UserId = userId,
-                    Name = column.Length > 100 ? column[..100] : column,
+                    Name = name,
                     Type = "Expense",
                     Color = DefaultData.NextColor(categories.Select(c => c.Color)),
                     SortOrder = categories.Where(c => c.Type == "Expense").Select(c => c.SortOrder).DefaultIfEmpty(-1).Max() + 1
@@ -62,8 +94,8 @@ public class SheetImportService
         }
 
         var existingIds = byColumn.Values.Where(c => c.Id != 0).Select(c => c.Id).ToList();
-        var fromDate = parsed.Days.Count > 0 ? parsed.Days.Min(d => d.Date) : DateOnly.MinValue;
-        var toDate = (parsed.Days.Count > 0 ? parsed.Days.Max(d => d.Date) : DateOnly.MinValue).AddDays(1);
+        var fromDate = days.Count > 0 ? days.Min(d => d.Date) : DateOnly.MinValue;
+        var toDate = (days.Count > 0 ? days.Max(d => d.Date) : DateOnly.MinValue).AddDays(1);
         var from = fromDate.ToDateTime(TimeOnly.MinValue);
         var to = toDate.ToDateTime(TimeOnly.MinValue);
 
@@ -78,12 +110,18 @@ public class SheetImportService
             .Where(n => n.UserId == userId && n.Date >= fromDate && n.Date < toDate)
             .ToDictionaryAsync(n => n.Date);
 
-        foreach (var day in parsed.Days)
+        foreach (var day in days)
         {
             var touched = false;
             foreach (var (column, amounts) in day.Cells)
             {
                 var category = byColumn[column];
+                if (category.IsArchived)
+                {
+                    result.CellsSkipped++;
+                    Warn(result, $"{day.Date:dd MMM yyyy} · {category.Name}: the category is archived; restore it to import its amounts");
+                    continue;
+                }
                 var current = category.Id == 0 ? new List<Transaction>() : existing[(day.Date, category.Id)].ToList();
 
                 for (var i = 0; i < Math.Max(current.Count, amounts.Count); i++)
@@ -112,9 +150,9 @@ public class SheetImportService
                 touched = true;
             }
 
-            if (day.Note.Length > 0)
+            var text = Truncate(InputRules.Clean(day.Note), InputRules.NoteLength);
+            if (text.Length > 0)
             {
-                var text = day.Note.Length > 1000 ? day.Note[..1000] : day.Note;
                 if (notes.TryGetValue(day.Date, out var note))
                     note.Text = text;
                 else
@@ -129,9 +167,8 @@ public class SheetImportService
 
         // Salary lines ("Salary (Oct pay): 55,000") become the salary plan, plus a received payment for months
         // up to today (the sheet records money that was already spent). Existing payments are never duplicated.
-        var today = LocalCalendar.Today(_clock, user.TimeZone);
         var plans = await _context.SalaryPlans.Where(s => s.UserId == userId).ToListAsync();
-        foreach (var hint in parsed.Salaries.OrderBy(s => s.PayMonth.Index))
+        foreach (var hint in salaries.OrderBy(s => s.PayMonth.Index))
         {
             var plannedNow = LedgerLoader.PlannedStatement(plans, hint.PayMonth, hint.PayMonth);
             if (plannedNow == null || SalaryMath.ExpectedNet(plannedNow.Components) != hint.Amount)
@@ -180,7 +217,48 @@ public class SheetImportService
             });
         }
 
+        // A month row's "Income: 60,500" beyond its salary (pending/extra and other income on the sheet's Summary) becomes
+        // one received other-income entry for that month. Its request id is derived from the month, so importing again
+        // updates it instead of adding another, and it goes away if the sheet no longer shows anything beyond salary.
+        if (parsed.Incomes.Count > 0)
+        {
+            var otherIncome = categories.FirstOrDefault(c => c.Type == "Income" && !c.IsArchived && c.Name.Equals("Other income", StringComparison.OrdinalIgnoreCase));
+            foreach (var hint in parsed.Incomes)
+            {
+                if (!YearMonth.IsValid(hint.Month.Year, hint.Month.Month) || hint.Month > YearMonth.Of(today)) continue;
+                var salary = salaries.Where(s => s.PayMonth.AddMonths(user.SalaryLagMonths) == hint.Month).Sum(s => s.Amount);
+                var extra = hint.Total - salary;
+                var requestId = SheetIncomeId(userId, hint.Month);
+                var imported = await _context.IncomeReceipts.Include(r => r.Allocations)
+                    .FirstOrDefaultAsync(r => r.UserId == userId && r.ClientRequestId == requestId);
+                if (extra <= 0)
+                {
+                    if (imported != null) _context.IncomeReceipts.Remove(imported);
+                    continue;
+                }
+
+                var receivedOn = DateOnly.FromDateTime(hint.Month.FirstDay);
+                if (receivedOn > today) receivedOn = today;
+                if (imported == null)
+                {
+                    imported = new IncomeReceipt { UserId = userId, ClientRequestId = requestId, Kind = ReceiptKind.Other, CreatedAt = DateTime.UtcNow };
+                    _context.IncomeReceipts.Add(imported);
+                }
+                imported.CategoryId = otherIncome?.Id;
+                imported.Status = ReceiptStatus.Received;
+                imported.ReceivedDate = receivedOn;
+                imported.Amount = extra;
+                imported.Description = "Income beyond salary (from the sheet)";
+                imported.Allocations.Clear();
+                imported.Allocations.Add(new IncomeAllocation { Year = hint.Month.Year, Month = hint.Month.Month, Amount = extra });
+                result.OtherIncomeImported++;
+            }
+        }
+
         await _context.SaveChangesAsync();
         return result;
     }
+
+    private static Guid SheetIncomeId(int userId, YearMonth month) =>
+        new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes($"sheet-other-income:{userId}:{month.Year}-{month.Month:00}")));
 }

@@ -23,7 +23,8 @@ if (!string.IsNullOrEmpty(port))
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = ExpenseTracker.Api.Controllers.InvalidInput.Response);
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
 
@@ -81,7 +82,9 @@ builder.Services.AddAuthentication(options =>
             if (!string.IsNullOrEmpty(token) && context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
                 context.Token = token;
             return Task.CompletedTask;
-        }
+        },
+        // Refuses tokens from before a password change or "sign out of all devices".
+        OnTokenValidated = SessionTokens.ValidateAsync
     };
 });
 
@@ -131,10 +134,32 @@ builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<SheetImportService>();
 builder.Services.AddScoped<LegacyBackfillService>();
 builder.Services.AddSingleton<LedgerNotifier>();
+
+// Accounts: password rules, sign-in tokens, emailed links.
+builder.Services.AddSingleton<SessionTokens>();
+builder.Services.AddScoped<PasswordPolicy>();
+builder.Services.AddScoped<OneTimeTokens>();
+builder.Services.AddScoped<AccountEmails>();
+builder.Services.AddSingleton<AppLinks>();
+builder.Services.AddEmailSender(builder.Configuration);
+if (builder.Configuration.GetValue("Security:BreachCheck", true))
+    builder.Services.AddHttpClient<IBreachedPasswordChecker, PwnedPasswordsChecker>(c =>
+    {
+        c.BaseAddress = new Uri(PwnedPasswordsChecker.BaseAddress);
+        // Sign-up waits on this, so give up quickly (the check then passes; see PwnedPasswordsChecker).
+        c.Timeout = TimeSpan.FromSeconds(3);
+        c.DefaultRequestHeaders.UserAgent.ParseAdd("ExpenseTracker/1.0");
+    });
+else
+    builder.Services.AddSingleton<IBreachedPasswordChecker, NoBreachCheck>();
+
 if (builder.Configuration.GetValue("BackgroundJobs:Enabled", true))
     builder.Services.AddHostedService<BudgetCheckBackgroundService>();
 
 var app = builder.Build();
+
+// Created now so a missing App:PublicUrl shows in the startup log rather than at the first emailed link.
+app.Services.GetRequiredService<AppLinks>();
 
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
@@ -168,13 +193,17 @@ app.UseExceptionHandler(errorApp =>
     errorApp.Run(async context =>
     {
         var feature = context.Features.Get<IExceptionHandlerFeature>();
+        // A request the server couldn't read (too large, cut off) is the client's problem, not a 500.
+        var badRequest = feature?.Error as BadHttpRequestException ?? feature?.Error?.InnerException as BadHttpRequestException;
         context.Response.StatusCode = feature?.Error is UnauthorizedAccessException
             ? StatusCodes.Status401Unauthorized
-            : StatusCodes.Status500InternalServerError;
+            : badRequest?.StatusCode ?? StatusCodes.Status500InternalServerError;
         context.Response.ContentType = "application/json";
-        var message = app.Environment.IsDevelopment() && feature?.Error != null
-            ? feature.Error.Message
-            : "An unexpected error occurred.";
+        var message = badRequest != null
+            ? badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge ? "That upload is too large." : "The request couldn't be read."
+            : app.Environment.IsDevelopment() && feature?.Error != null
+                ? feature.Error.Message
+                : "An unexpected error occurred.";
         await context.Response.WriteAsJsonAsync(new { error = message });
     });
 });

@@ -82,6 +82,15 @@ public class SheetCsvParserTests
     private static SheetCsvParser.ParseResult Parse(string csv) => SheetCsvParser.Parse(new StringReader(csv));
 
     [Fact]
+    public void ReadsTheMonthsIncomeTotal_ButNotOtherIncomeLines()
+    {
+        Assert.Equal(new[] { new SheetCsvParser.IncomeHint(new YearMonth(2026, 11), 60_500m) }, Parse(DailyLogCsv).Incomes);
+
+        var other = Parse(DailyLogCsv.Replace("Income: 60,500", "Other income: 5,500"));
+        Assert.Empty(other.Incomes);
+    }
+
+    [Fact]
     public void FindsTheSpendingColumnsBetweenMonthAndDailyTotal()
     {
         var result = Parse(DailyLogCsv);

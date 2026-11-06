@@ -19,6 +19,9 @@ public sealed record CategoryFigures(
 
 public sealed record GroupFigures(string Name, decimal Net, decimal? Budget, IReadOnlyList<string> Members);
 
+// One line of received other income for the month (e.g. "Pending / extra"); CategoryId is null for uncategorised receipts.
+public sealed record IncomeSourceFigures(int? CategoryId, string Name, string Color, decimal Amount);
+
 public sealed record DayFigures(DateOnly Date, decimal Net, IReadOnlyDictionary<int, decimal> ByCategory);
 
 public sealed record SalaryFigures(
@@ -49,6 +52,7 @@ public sealed class MonthFigures
 
     public decimal SalaryIncome { get; init; }
     public decimal OtherIncome { get; init; }
+    public IReadOnlyList<IncomeSourceFigures> OtherIncomeSources { get; init; } = Array.Empty<IncomeSourceFigures>();
     public decimal ReceivedIncome { get; init; }
     public decimal ExpectedOtherIncome { get; init; }
 
@@ -165,6 +169,19 @@ public static class LedgerCalculator
         var expectedOther = AllocatedTo(data.Receipts.Where(r => r.Kind == ReceiptKind.Other && r.Status == ReceiptStatus.Expected));
         var receivedIncome = salaryIncome + otherIncome;
 
+        // Other income per category, so the statement can list each source the way the sheet does.
+        var categoryById = data.Categories.ToDictionary(c => c.Id);
+        var otherSources = received.Where(r => r.Kind == ReceiptKind.Other)
+            .Select(r => (r.CategoryId, Amount: r.Allocations.Where(a => a.Month == month).Sum(a => a.Amount)))
+            .Where(x => x.Amount != 0)
+            .GroupBy(x => x.CategoryId is int id && categoryById.ContainsKey(id) ? id : (int?)null)
+            .Select(g => g.Key is int id
+                ? (Order: categoryById[id].SortOrder, Source: new IncomeSourceFigures(id, categoryById[id].Name, categoryById[id].Color, g.Sum(x => x.Amount)))
+                : (Order: int.MaxValue, Source: new IncomeSourceFigures(null, "Other income", "#898781", g.Sum(x => x.Amount))))
+            .OrderBy(x => x.Order).ThenBy(x => x.Source.Name)
+            .Select(x => x.Source)
+            .ToList();
+
         var funding = data.Statements
             .Where(s => s.Funded == month)
             .OrderBy(s => s.Earned)
@@ -270,6 +287,7 @@ public static class LedgerCalculator
             SalaryOverpaid = funding.Sum(f => f.Overpaid),
             SalaryIncome = salaryIncome,
             OtherIncome = otherIncome,
+            OtherIncomeSources = otherSources,
             ReceivedIncome = receivedIncome,
             ExpectedOtherIncome = expectedOther,
             OpeningBalance = opening,

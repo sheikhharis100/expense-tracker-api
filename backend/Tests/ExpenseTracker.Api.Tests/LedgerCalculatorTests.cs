@@ -73,6 +73,41 @@ public class LedgerCalculatorTests
     }
 
     [Fact]
+    public void OtherIncome_IsListedPerCategoryInCategoryOrder()
+    {
+        LedgerReceipt Received(int? category, decimal amount, YearMonth month) =>
+            new(_id++, ReceiptKind.Other, ReceiptStatus.Received, new DateOnly(month.Year, month.Month, 2), amount, null, category,
+                new[] { new LedgerAllocation(month, amount) });
+        var data = new LedgerData
+        {
+            Today = MidNov,
+            Statements = new[] { Statement(1, Oct, Nov, (SalaryComponentKind.Base, 55_000m)) },
+            Categories = Categories.Concat(new LedgerCategory[]
+            {
+                new(20, "Pending / extra", "Income", "#eda100", null, false, 0),
+                new(21, "Freelance", "Income", "#1baf7a", null, false, 1),
+            }).ToList(),
+            Receipts = new[]
+            {
+                Salary(55_000m, new DateOnly(2026, 11, 1), 1),
+                Received(21, 1_000m, Nov),
+                Received(20, 5_000m, Nov),
+                Received(20, 500m, Nov),
+                Received(null, 250m, Nov),
+                Received(21, 9_999m, Dec),
+            },
+        };
+
+        var m = LedgerCalculator.Single(data, Nov);
+
+        Assert.Equal(6_750m, m.OtherIncome);
+        Assert.Equal(
+            new[] { ("Pending / extra", 5_500m), ("Freelance", 1_000m), ("Other income", 250m) },
+            m.OtherIncomeSources.Select(s => (s.Name, s.Amount)).ToArray());
+        Assert.Equal(m.OtherIncome, m.OtherIncomeSources.Sum(s => s.Amount));
+    }
+
+    [Fact]
     public void AdditionalExpenses_AreAlreadyInsideNetSpending_NotAddedAgain()
     {
         var m = LedgerCalculator.Single(Baseline(), Nov);

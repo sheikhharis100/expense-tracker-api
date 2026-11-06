@@ -3,6 +3,7 @@ import { ApiError } from '../api/client';
 import { useCategories, useDeleteCategory, useReorderCategories, useSaveCategory } from '../api/hooks';
 import type { Category, CategoryType } from '../api/types';
 import { PALETTE, useSeriesColor } from '../lib/colors';
+import { checkName, firstError, LIMITS } from '../lib/validate';
 import { Icon } from './Icon';
 import { toast } from './Toast';
 
@@ -105,11 +106,14 @@ function ColumnEditorDialog({ target, onClose }: { target: Target; onClose: () =
   const groups = [...new Set(all.map((c) => c.groupName).filter((g): g is string => !!g))];
   const siblings = all.filter((c) => c.type === type).sort((a, b) => a.sortOrder - b.sortOrder);
   const position = existing ? siblings.findIndex((c) => c.id === existing.id) : -1;
+  // Names are unique across spending and income, ignoring case, like on the server.
+  const nameCheck = checkName(name, LIMITS.name, all.filter((c) => c.id !== existing?.id).map((c) => c.name), 'category');
+  const nameError = name.trim() || !isNew ? firstError(nameCheck) : null;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) return setError('Give the column a name');
+    if (!nameCheck.ok) return setError(nameCheck.error);
+    const trimmed = nameCheck.value;
     save.mutate(
       {
         id: existing?.id,
@@ -168,7 +172,15 @@ function ColumnEditorDialog({ target, onClose }: { target: Target; onClose: () =
 
         <label className="field">
           <span>Name</span>
-          <input ref={nameRef} value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="e.g. Groceries" />
+          <input
+            ref={nameRef}
+            value={name}
+            maxLength={LIMITS.name}
+            aria-invalid={nameError ? true : undefined}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Groceries"
+          />
+          {nameError && <small className="error-text">{nameError}</small>}
         </label>
 
         <fieldset className="field">
@@ -259,7 +271,7 @@ function ColumnEditorDialog({ target, onClose }: { target: Target; onClose: () =
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary" disabled={save.isPending}>
+          <button className="btn btn-primary" disabled={save.isPending || !nameCheck.ok}>
             {isNew ? 'Add category' : 'Save'}
           </button>
         </div>

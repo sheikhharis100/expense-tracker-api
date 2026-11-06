@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useMatch } from 'react-router-dom';
+import { useTheme } from '../lib/theme';
 import { useLive } from '../live/LiveProvider';
+import { ProfileLink } from './Avatar';
 import { ColumnEditorProvider } from './ColumnEditor';
 import { Icon } from './Icon';
 import { SyncBadge, SyncSheet, useOfflineSync, WakingBanner } from './OfflineSync';
@@ -25,8 +27,19 @@ function LiveBadge() {
       title={status === 'live' ? 'Changes from your other devices appear here instantly' : 'Reconnecting; your changes still save'}
     >
       <span className="live-dot" aria-hidden="true" />
-      {text}
+      <span className="live-text">{text}</span>
     </span>
+  );
+}
+
+// One tap between light and dark. Settings → Appearance can hand it back to the device setting.
+function ThemeToggle() {
+  const { theme, setChoice } = useTheme();
+  const next = theme === 'dark' ? 'light' : 'dark';
+  return (
+    <button type="button" className="btn btn-ghost btn-icon theme-toggle" onClick={() => setChoice(next)} aria-label={`Switch to the ${next} theme`} title={`Switch to the ${next} theme`}>
+      <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+    </button>
   );
 }
 
@@ -52,19 +65,21 @@ export function AppShell({ children }: { children: ReactNode }) {
               <nav className="nav" aria-label="Main">
                 <NavLink to={`/m/${monthMatch?.params.ym ?? currentMonth}`} className={() => `nav-link ${monthMatch ? 'active' : ''}`}>
                   <Icon name="calendar" className="nav-icon" />
-                  Month
+                  <span className="nav-text">Month</span>
                 </NavLink>
                 <NavLink to={`/year/${viewedYear}`} className="nav-link">
                   <Icon name="bars" className="nav-icon" />
-                  Year
+                  <span className="nav-text">Year</span>
                 </NavLink>
                 <NavLink to="/settings" className="nav-link">
                   <Icon name="sliders" className="nav-icon" />
-                  Settings
+                  <span className="nav-text">Settings</span>
                 </NavLink>
               </nav>
               <SyncBadge onOpen={() => setSyncOpen(true)} />
               <LiveBadge />
+              <ThemeToggle />
+              <ProfileLink />
             </div>
             <WakingBanner />
           </header>

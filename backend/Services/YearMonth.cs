@@ -19,7 +19,8 @@ public readonly record struct YearMonth(int Year, int Month) : IComparable<YearM
 
     public YearMonth AddMonths(int months) => FromIndex(Index + months);
 
-    public static bool IsValid(int year, int month) => year is >= 2000 and <= 3000 && month is >= 1 and <= 12;
+    public static bool IsValid(int year, int month) =>
+        year >= InputRules.MinYear && year <= InputRules.MaxYear && month is >= 1 and <= 12;
 
     // Accepts "2026-11".
     public static bool TryParse(string? value, out YearMonth result)
@@ -45,7 +46,9 @@ public readonly record struct YearMonth(int Year, int Month) : IComparable<YearM
 public sealed class YearMonthJsonConverter : JsonConverter<YearMonth>
 {
     public override YearMonth Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        YearMonth.TryParse(reader.GetString(), out var ym) ? ym : throw new JsonException("Month must look like 2026-11");
+        reader.TokenType == JsonTokenType.String && YearMonth.TryParse(reader.GetString(), out var ym) ? ym : throw new JsonException(Invalid);
+
+    public const string Invalid = "Month must look like 2026-11";
 
     public override void Write(Utf8JsonWriter writer, YearMonth value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.ToString());

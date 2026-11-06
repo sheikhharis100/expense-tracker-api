@@ -41,9 +41,9 @@ function SummaryBody({ s }: { s: MonthSummary }) {
           {f.timing === 'current' && <Allowance f={f} />}
           <PlanCard f={f} />
           <Comparison s={s} />
+          <BudgetTable f={f} />
         </div>
       </div>
-      <BudgetTable f={f} />
       <div className="grid-2 grid-2-wide-right">
         <WhereItWent f={f} />
         <DailyChart f={f} today={s.today} />
@@ -132,9 +132,9 @@ function Tile({ icon, tone, label, value, hint, negative }: { icon: IconName; to
 
 // ---------- Statement ----------
 
-function Row({ label, value, strong, muted, note }: { label: string; value: string; strong?: boolean; muted?: boolean; note?: string }) {
+function Row({ label, value, strong, muted, sub, note }: { label: string; value: string; strong?: boolean; muted?: boolean; sub?: boolean; note?: string }) {
   return (
-    <tr className={`${strong ? 'row-strong' : ''} ${muted ? 'row-muted' : ''}`}>
+    <tr className={`${strong ? 'row-strong' : ''} ${muted ? 'row-muted' : ''} ${sub ? 'row-sub' : ''}`}>
       <th scope="row">
         {label}
         {note && <span className="row-note">{note}</span>}
@@ -173,6 +173,9 @@ function Statement({ f, currency }: { f: MonthFigures; currency: string }) {
           <Row label="Opening balance" value={signed(f.openingBalance)} note={openingNote} />
           <Row label="Salary income for this month" value={money(f.salaryIncome)} />
           <Row label="Other received income" value={money(f.otherIncome)} />
+          {(f.otherIncomeSources ?? []).map((s) => (
+            <Row key={s.categoryId ?? 'none'} label={s.name} value={money(s.amount)} sub />
+          ))}
           <Row label="Total received income" value={money(f.receivedIncome)} strong />
           <Row label="Available funds" value={signed(f.availableFunds)} strong note="opening + received income" />
           <tr className="group-head">
@@ -182,6 +185,12 @@ function Statement({ f, currency }: { f: MonthFigures; currency: string }) {
           <Row label="Refunds" value={f.refunds ? `−${money(f.refunds)}` : '–'} />
           <Row label="Net spending" value={money(f.netSpending)} strong />
           <Row label="Additional expenses" value={money(f.additionalNet)} muted note="already included above" />
+          <Row
+            label="Average spent per day"
+            value={orNA(f.averageDailySpending, (v) => money(Math.round(v)))}
+            note={f.elapsedDays ? `${money(f.netSpending, { dash: false })} over ${f.elapsedDays} day${f.elapsedDays === 1 ? '' : 's'} so far` : undefined}
+          />
+          <Row label="Days with spending logged" value={String(f.daysWithSpending)} note={f.elapsedDays ? `of ${f.elapsedDays} so far` : undefined} />
         </tbody>
         <tfoot>
           <Row label="Remaining balance" value={signed(f.remainingBalance, { dash: false })} strong />
@@ -279,12 +288,17 @@ function Comparison({ s }: { s: MonthSummary }) {
           <Icon name="pulse" className="card-icon" /> Compared with {ymLabel(p.month)}
         </h2>
       </div>
-      <table className="kv-table">
-        <tbody>
-          <Row label="Net spending" value={`${signedChange(p.netSpendingChange)}${p.netSpendingChangePercent != null ? ` (${percent(p.netSpendingChangePercent)})` : ''}`} note={`was ${money(p.netSpending, { dash: false })}`} />
-          <Row label="Received income" value={signedChange(p.receivedIncomeChange)} note={`was ${money(p.receivedIncome, { dash: false })}`} />
-        </tbody>
-      </table>
+      {p.netSpending === 0 && p.receivedIncome === 0 ? (
+        // "+32,900, was 0" says nothing useful when the earlier month was simply never filled in.
+        <p className="muted small">Nothing was recorded for {ymLabel(p.month)}, so there's no comparison yet.</p>
+      ) : (
+        <table className="kv-table">
+          <tbody>
+            <Row label="Net spending" value={`${signedChange(p.netSpendingChange)}${p.netSpendingChangePercent != null ? ` (${percent(p.netSpendingChangePercent)})` : ''}`} note={`was ${money(p.netSpending, { dash: false })}`} />
+            <Row label="Received income" value={signedChange(p.receivedIncomeChange)} note={`was ${money(p.receivedIncome, { dash: false })}`} />
+          </tbody>
+        </table>
+      )}
       {f.topCategories.length > 0 && (
         <>
           <h3 className="mini-head">Highest spending</h3>
@@ -309,6 +323,11 @@ function Comparison({ s }: { s: MonthSummary }) {
 
 function BudgetTable({ f }: { f: MonthFigures }) {
   const color = useSeriesColor();
+  const [showUnused, setShowUnused] = useState(false);
+  // Categories with no spending and no budget this month are folded away so the table shows what matters.
+  const unused = f.categories.filter((c) => c.gross === 0 && c.refunds === 0 && c.budget == null);
+  const rows = showUnused ? f.categories : f.categories.filter((c) => !unused.includes(c));
+  const anyBudget = f.totalBudget != null;
   return (
     <section className="card">
       <div className="card-head">
@@ -337,24 +356,33 @@ function BudgetTable({ f }: { f: MonthFigures }) {
             </tr>
           </thead>
           <tbody>
-            {f.categories.map((c) => (
+            {rows.map((c) => (
               <tr key={c.categoryId} className={c.isArchived ? 'row-muted' : ''}>
                 <th scope="row">
                   <span className="swatch" style={{ background: color(c.color) }} aria-hidden="true" />
                   {c.name}
                   {c.isArchived && <span className="badge">archived</span>}
                 </th>
-                <td className={`num ${c.budget == null ? 'muted' : ''}`}>{c.budget == null ? 'Not set' : money(c.budget, { dash: false })}</td>
+                <td className={`num ${c.budget == null ? 'muted' : ''}`}>{c.budget == null ? (anyBudget ? 'Not set' : '–') : money(c.budget, { dash: false })}</td>
                 <td className="num">{money(c.net)}</td>
                 <td className={`num ${(c.budgetRemaining ?? 0) < 0 ? 'negative' : ''}`}>{c.budgetRemaining == null ? '' : signed(c.budgetRemaining, { dash: false })}</td>
                 <td className="meter-col">{c.budget != null && c.budget > 0 && <Meter value={c.net} max={c.budget} color={color(c.color)} label={`${c.name} budget used`} />}</td>
               </tr>
             ))}
+            {unused.length > 0 && (
+              <tr className="row-toggle">
+                <td colSpan={5}>
+                  <button type="button" className="link-button" onClick={() => setShowUnused((v) => !v)} aria-expanded={showUnused}>
+                    {showUnused ? 'Hide unused categories' : `Show ${unused.length} unused ${unused.length === 1 ? 'category' : 'categories'}`}
+                  </button>
+                </td>
+              </tr>
+            )}
           </tbody>
           <tfoot>
             <tr>
               <th scope="row">Total</th>
-              <td className="num">{f.totalBudget == null ? 'Not set' : money(f.totalBudget, { dash: false })}</td>
+              <td className={`num ${anyBudget ? '' : 'muted'}`}>{anyBudget ? money(f.totalBudget ?? 0, { dash: false }) : 'Not set'}</td>
               <td className="num">{money(f.netSpending)}</td>
               <td className={`num ${(f.overallBudgetRemaining ?? 0) < 0 ? 'negative' : ''}`}>{f.overallBudgetRemaining == null ? '' : signed(f.overallBudgetRemaining, { dash: false })}</td>
               <td />

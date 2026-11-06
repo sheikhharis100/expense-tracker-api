@@ -28,6 +28,20 @@ export interface Me {
   supportedCurrencies: string[];
   paymentMethods: string[];
   needsSetup: boolean;
+  // Missing from copies cached on the device before these existed.
+  emailVerified?: boolean;
+  memberSince?: IsoDate;
+}
+
+export interface ProfileStats {
+  entriesLogged: number;
+  monthsTracked: number;
+  firstMonth: Ym | null;
+}
+
+export interface AuthOptions {
+  // False when the server can't send email: sign-in links are hidden and password reset explains why.
+  emailEnabled: boolean;
 }
 
 export interface MeUpdate {
@@ -99,6 +113,8 @@ export interface MonthFigures {
   salaryOverpaid: number;
   salaryIncome: number;
   otherIncome: number;
+  // Received other income per category (null = uncategorised), in category order.
+  otherIncomeSources: { categoryId: number | null; name: string; color: string; amount: number }[];
   receivedIncome: number;
   expectedOtherIncome: number;
   openingBalance: number;
@@ -565,6 +581,7 @@ export interface SheetImportResult {
   entriesCreated: number;
   notesImported: number;
   salariesImported: number;
+  otherIncomeImported: number;
   cellsSkipped: number;
   categoriesCreated: string[];
   warnings: string[];

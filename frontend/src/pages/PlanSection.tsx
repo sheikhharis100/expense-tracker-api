@@ -18,10 +18,10 @@ import { Meter } from '../components/Meter';
 import { ScopeChoice, Sheet } from '../components/Sheet';
 import { toast } from '../components/Toast';
 import { SectionTitle, useWorkspace } from '../components/Workspace';
-import { parseAmounts, parseSigned } from '../lib/amounts';
 import { useSeriesColor } from '../lib/colors';
-import { dayLabel, shiftKey, ymLabel } from '../lib/dates';
+import { dayLabel, lastDayOf, shiftKey, ymLabel } from '../lib/dates';
 import { money, signed } from '../lib/format';
+import { checkAmount, checkDate, checkMonth, checkSigned, checkText, firstError, LIMITS, MAX_MONTH, MIN_MONTH } from '../lib/validate';
 
 export function PlanSection() {
   return (
@@ -110,13 +110,14 @@ function BudgetSheet({ line, onClose }: { line: BudgetLine; onClose: () => void 
   const [text, setText] = useState(line.amount == null ? '' : String(line.amount));
   const [scope, setScope] = useState<'month' | 'future'>('future');
   const [error, setError] = useState<string | null>(null);
+  // Empty means no budget; "0" is a real budget of zero.
+  const check = checkAmount(text, { allowZero: true, sum: true, required: false });
+  const amountError = firstError(check);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const parsed = parseAmounts(text);
-    if (!parsed.ok) return setError(parsed.error);
-    const amount = parsed.amounts.length ? parsed.amounts.reduce((a, b) => a + b, 0) : null;
-    set.mutate({ ym, categoryId: line.categoryId, amount, scope }, { onSuccess: () => (toast('Budget saved', 'success'), onClose()), onError: (err) => setError(err.message) });
+    if (!check.ok) return setError(check.error);
+    set.mutate({ ym, categoryId: line.categoryId, amount: check.value, scope }, { onSuccess: () => (toast('Budget saved', 'success'), onClose()), onError: (err) => setError(err.message) });
   };
 
   return (
@@ -124,12 +125,13 @@ function BudgetSheet({ line, onClose }: { line: BudgetLine; onClose: () => void 
       <form className="form-stack" onSubmit={submit}>
         <label className="field field-amount">
           <span>Monthly budget (leave empty for none)</span>
-          <input inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} placeholder="Not set" />
+          <input inputMode="decimal" value={text} aria-invalid={amountError ? true : undefined} onChange={(e) => setText(e.target.value)} placeholder="Not set" />
+          {amountError && <small className="error-text">{amountError}</small>}
         </label>
         <ScopeChoice value={scope} onChange={setScope} month={ymLabel(ym)} />
         <p className="muted small">Earlier months keep their budgets either way.</p>
         {error && <p className="error-text" role="alert">{error}</p>}
-        <button className="btn btn-primary btn-block" disabled={set.isPending}>
+        <button className="btn btn-primary btn-block" disabled={set.isPending || !!amountError}>
           Save budget
         </button>
       </form>
@@ -256,15 +258,23 @@ function RecurringSheet({ item, onClose }: { item: RecurringItem | null; onClose
     if (!options.some((c) => c.id === categoryId)) setCategoryId(options[0]?.id ?? null);
   }, [kind, categories.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Checked as you type, with the server's rules.
+  const amountCheck = checkAmount(amount);
+  const amountError = amount.trim() ? firstError(amountCheck) : null;
+  const dayError = Number.isInteger(day) && day >= 1 && day <= 31 ? null : 'Day of month must be between 1 and 31';
+  const endError = end ? firstError(checkMonth(end, 'End month'), end < start && 'The end month is before the start month') : null;
+  const nameError = firstError(checkText(description, LIMITS.recurringName, 'Name', { required: true }));
+  const otherError = firstError(checkMonth(start, 'Start month'), kind === 'Expense' && !categoryId && 'Choose a category');
+  const problem = firstError(nameError, amountCheck, dayError, endError, otherError);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const parsed = parseAmounts(amount);
-    if (!parsed.ok || parsed.amounts.length !== 1) return setError('Enter one amount');
+    if (problem || !amountCheck.ok || amountCheck.value == null) return setError(problem ?? 'Enter an amount');
     try {
       await save.mutateAsync({
         id: item?.id,
         from: item ? (ym > item.start ? ym : item.start) : undefined,
-        kind, description, amount: parsed.amounts[0], categoryId, dayOfMonth: day, paymentMethod: method, start, end: end || null, version: item?.version,
+        kind, description, amount: amountCheck.value, categoryId, dayOfMonth: day, paymentMethod: method, start, end: end || null, version: item?.version,
       });
       toast(item ? `Saved from ${ymLabel(ym > (item?.start ?? ym) ? ym : item!.start)} onward` : 'Recurring item added', 'success');
       onClose();
@@ -287,16 +297,26 @@ function RecurringSheet({ item, onClose }: { item: RecurringItem | null; onClose
         )}
         <label className="field">
           <span>Name</span>
-          <input value={description} maxLength={200} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Rent, Internet, Netflix" />
+          <input
+            value={description}
+            maxLength={LIMITS.recurringName}
+            aria-invalid={description && nameError ? true : undefined}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="e.g. Rent, Internet, Netflix"
+          />
+          {/* Blank is only pointed out once something was typed; Save stays off meanwhile. */}
+          {description && nameError && <small className="error-text">{nameError}</small>}
         </label>
         <div className="quick-row">
           <label className="field">
             <span>Amount</span>
-            <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input inputMode="decimal" value={amount} aria-invalid={amountError ? true : undefined} onChange={(e) => setAmount(e.target.value)} />
+            {amountError && <small className="error-text">{amountError}</small>}
           </label>
           <label className="field">
             <span>Day of month</span>
-            <input type="number" min={1} max={31} value={day} onChange={(e) => setDay(Number(e.target.value))} />
+            <input type="number" min={1} max={31} step={1} value={Number.isNaN(day) ? '' : day} aria-invalid={dayError ? true : undefined} onChange={(e) => setDay(e.target.value === '' ? NaN : Number(e.target.value))} />
+            {dayError && <small className="error-text">{dayError}</small>}
           </label>
         </div>
         <label className="field">
@@ -325,11 +345,16 @@ function RecurringSheet({ item, onClose }: { item: RecurringItem | null; onClose
           </label>
           <label className="field">
             <span>Ends (optional)</span>
-            <input type="month" value={end ?? ''} min={start} onChange={(e) => setEnd(e.target.value)} />
+            <input type="month" value={end ?? ''} min={start} max={MAX_MONTH} aria-invalid={endError ? true : undefined} onChange={(e) => setEnd(e.target.value)} />
+            {endError && <small className="error-text">{endError}</small>}
           </label>
         </div>
         {item && <p className="muted small">Changes apply from {ymLabel(ym > item.start ? ym : item.start)} onward. Earlier months and anything already paid keep their values. To change only this month, edit the occurrence instead.</p>}
-        {error && <p className="error-text" role="alert">{error}</p>}
+        {(error ?? otherError) && (
+          <p className="error-text" role="alert">
+            {error ?? otherError}
+          </p>
+        )}
         <div className="form-actions">
           {item && (
             <button type="button" className="btn btn-danger-ghost" onClick={() => confirm(`Stop “${item.description}” from ${ymLabel(ym)} on? Paid months are kept.`) && stop.mutate({ id: item.id, from: ym }, { onSuccess: onClose })}>
@@ -337,7 +362,7 @@ function RecurringSheet({ item, onClose }: { item: RecurringItem | null; onClose
             </button>
           )}
           <span className="spacer" />
-          <button className="btn btn-primary" disabled={save.isPending}>
+          <button className="btn btn-primary" disabled={save.isPending || !!problem} title={problem ?? undefined}>
             Save
           </button>
         </div>
@@ -352,29 +377,38 @@ function OccurrenceSheet({ o, onClose }: { o: Occurrence; onClose: () => void })
   const [due, setDue] = useState(o.dueDate);
   const [note, setNote] = useState(o.note);
   const [error, setError] = useState<string | null>(null);
+  // The due date can move within its month only.
+  const month = o.dueDate.slice(0, 7);
+  const amountCheck = checkAmount(amount);
+  const amountError = amount.trim() ? firstError(amountCheck) : null;
+  const dueError = firstError(
+    checkDate(due, { label: 'Due date', min: `${month}-01`, max: lastDayOf(month), minMessage: 'The due date must stay in the same month', maxMessage: 'The due date must stay in the same month' }),
+  );
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const parsed = parseAmounts(amount);
-    if (!parsed.ok || parsed.amounts.length !== 1) return setError('Enter one amount');
-    update.mutate({ id: o.id, version: o.version, amount: parsed.amounts[0], dueDate: due, note }, { onSuccess: () => (toast('Saved for this month only', 'success'), onClose()), onError: (err) => setError(err.message) });
+    const problem = firstError(amountCheck, dueError);
+    if (problem || !amountCheck.ok || amountCheck.value == null) return setError(problem ?? 'Enter an amount');
+    update.mutate({ id: o.id, version: o.version, amount: amountCheck.value, dueDate: due, note }, { onSuccess: () => (toast('Saved for this month only', 'success'), onClose()), onError: (err) => setError(err.message) });
   };
   return (
     <Sheet title={`${o.description} · this month only`} onClose={onClose}>
       <form className="form-stack" onSubmit={submit}>
         <label className="field field-amount">
           <span>Amount</span>
-          <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input inputMode="decimal" value={amount} aria-invalid={amountError ? true : undefined} onChange={(e) => setAmount(e.target.value)} />
+          {amountError && <small className="error-text">{amountError}</small>}
         </label>
         <label className="field">
           <span>Due date</span>
-          <input type="date" value={due} min={`${o.dueDate.slice(0, 7)}-01`} onChange={(e) => e.target.value && setDue(e.target.value)} />
+          <input type="date" value={due} min={`${month}-01`} max={lastDayOf(month)} aria-invalid={dueError ? true : undefined} onChange={(e) => e.target.value && setDue(e.target.value)} />
+          {dueError && <small className="error-text">{dueError}</small>}
         </label>
         <label className="field">
           <span>Note</span>
-          <input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} />
+          <input value={note} maxLength={LIMITS.description} onChange={(e) => setNote(e.target.value)} />
         </label>
         {error && <p className="error-text" role="alert">{error}</p>}
-        <button className="btn btn-primary btn-block" disabled={update.isPending}>
+        <button className="btn btn-primary btn-block" disabled={update.isPending || !amountCheck.ok || !!dueError}>
           Save
         </button>
       </form>
@@ -404,14 +438,19 @@ function MonthSettingsCard() {
   }, [s]);
   useEffect(() => setFrom(shiftKey(ym, -1)), [ym]);
 
+  // Opening balance can be negative (an overdraft carried in); reserved savings can't.
+  const openingCheck = checkSigned(opening);
+  const reservedCheck = checkAmount(reserved, { allowZero: true, required: false });
+  const openingError = firstError(openingCheck);
+  const reservedError = firstError(reservedCheck);
+  const fromError = firstError(checkMonth(from, 'The month to copy from'));
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const o = opening.trim() === '' ? null : parseSigned(opening);
-    const r = reserved.trim() === '' ? { ok: true as const, value: 0 } : parseSigned(reserved);
-    if ((o && !o.ok) || !r.ok || r.value < 0) return setError('Enter numbers for the balances');
+    if (!openingCheck.ok || !reservedCheck.ok) return setError(openingError ?? reservedError);
     setError(null);
     save.mutate(
-      { ym, openingBalance: o && o.ok ? o.value : null, reservedSavings: r.value, note, version: s?.version || undefined },
+      { ym, openingBalance: openingCheck.value, reservedSavings: reservedCheck.value ?? 0, note, version: s?.version || undefined },
       { onSuccess: () => toast('Month settings saved', 'success'), onError: (err) => setError(err.message) },
     );
   };
@@ -426,23 +465,27 @@ function MonthSettingsCard() {
       <form className="form-grid" onSubmit={submit}>
         <label className="field">
           <span>Opening balance</span>
-          <input inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" />
-          <small className="muted">
-            {s?.carryoverEnabled ? 'Carryover is on: later months open with the previous closing balance; this is used for the first month only.' : 'Money you start the month with. It is not income.'}
-          </small>
+          <input inputMode="decimal" value={opening} aria-invalid={openingError ? true : undefined} onChange={(e) => setOpening(e.target.value)} placeholder="0" />
+          {openingError ? (
+            <small className="error-text">{openingError}</small>
+          ) : (
+            <small className="muted">
+              {s?.carryoverEnabled ? 'Carryover is on: later months open with the previous closing balance; this is used for the first month only.' : 'Money you start the month with. It is not income.'}
+            </small>
+          )}
         </label>
         <label className="field">
           <span>Reserved savings</span>
-          <input inputMode="decimal" value={reserved} onChange={(e) => setReserved(e.target.value)} placeholder="0" />
-          <small className="muted">Set aside before the daily allowance is worked out.</small>
+          <input inputMode="decimal" value={reserved} aria-invalid={reservedError ? true : undefined} onChange={(e) => setReserved(e.target.value)} placeholder="0" />
+          {reservedError ? <small className="error-text">{reservedError}</small> : <small className="muted">Set aside before the daily allowance is worked out.</small>}
         </label>
         <label className="field field-wide">
           <span>Note</span>
-          <input value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
+          <input value={note} maxLength={LIMITS.note} onChange={(e) => setNote(e.target.value)} />
         </label>
         {error && <p className="error-text field-wide" role="alert">{error}</p>}
         <div className="form-actions">
-          <button className="btn btn-primary" disabled={save.isPending}>
+          <button className="btn btn-primary" disabled={save.isPending || !!openingError || !!reservedError}>
             Save
           </button>
         </div>
@@ -454,12 +497,13 @@ function MonthSettingsCard() {
         <div className="inline-form">
           <label className="field">
             <span>Copy from</span>
-            <input type="month" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} />
+            <input type="month" value={from} min={MIN_MONTH} max={MAX_MONTH} aria-invalid={fromError ? true : undefined} onChange={(e) => e.target.value && setFrom(e.target.value)} />
+            {fromError && <small className="error-text">{fromError}</small>}
           </label>
           <button
             type="button"
             className="btn"
-            disabled={copy.isPending || from === ym}
+            disabled={copy.isPending || from === ym || !!fromError}
             onClick={() =>
               copy.mutate(
                 { ym, from, layout: true, budgets: true, recurring: true },
