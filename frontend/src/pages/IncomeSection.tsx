@@ -63,7 +63,7 @@ function IncomeBody({ d }: { d: IncomeMonth }) {
           <dd>{money(d.otherIncomeReceived)}</dd>
           {d.expectedOtherIncome > 0 && <span className="tile-hint">+{money(d.expectedOtherIncome)} expected</span>}
         </div>
-        <div className="tile tile-avg">
+        <div className="tile tile-avg tile-total">
           <dt>Total income available</dt>
           <dd>{money(d.totalReceivedIncome)}</dd>
           <span className="tile-hint">received, for {ymLabel(ym)}</span>
@@ -183,7 +183,13 @@ function StatementCard({ s }: { s: SalaryStatement }) {
             <li key={p.id}>
               <span className="entry-name">
                 {p.receivedDate ? dayLabel(p.receivedDate).day : ''} · {p.paymentMethod || 'Payment'}
-                <span className="muted small"> → {p.allocations.map((a) => `${ymLabel(a.month)} ${money(a.amount)}`).join(', ')}</span>
+                <span className="muted small">
+                  {' '}
+                  →{' '}
+                  {p.allocations.length === 1 && p.allocations[0].amount === p.amount
+                    ? ymLabel(p.allocations[0].month)
+                    : p.allocations.map((a) => `${ymLabel(a.month)} ${money(a.amount)}`).join(', ')}
+                </span>
                 {p.unallocated > 0 && <span className="badge badge-warn">{money(p.unallocated)} unallocated</span>}
               </span>
               <span className="num">{money(p.amount)}</span>
@@ -482,7 +488,7 @@ function OtherIncome({ d }: { d: IncomeMonth }) {
                 {r.description || r.categoryName}
                 <span className="muted small">
                   {' '}
-                  · {r.categoryName} · {r.status === 'Expected' ? `expected ${r.expectedDate ? dayLabel(r.expectedDate).day : ''}` : dayLabel(r.receivedDate!).day}
+                  {r.description && r.description !== r.categoryName ? `· ${r.categoryName} ` : ''}· {r.status === 'Expected' ? `expected ${r.expectedDate ? dayLabel(r.expectedDate).day : ''}` : dayLabel(r.receivedDate!).day}
                 </span>
                 {r.status === 'Expected' && <span className="badge badge-plan">expected</span>}
               </span>
