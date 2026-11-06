@@ -55,14 +55,28 @@ Calculated columns use a small, safe formula language (not Excel): see [docs/for
 
 ## Run locally
 
+### Everything in Docker (no .NET or Node needed)
+
+```bash
+docker compose up --build -d                   # app on http://localhost:8080
+```
+
+This builds the same image Render runs and starts it with Postgres and [Mailpit](https://mailpit.axllent.org), a
+local mail catcher: password-reset and sign-in emails appear at **http://localhost:8025** instead of being sent.
+`docker compose logs -f app` shows the app's log; `docker compose down` stops everything (your data stays in the
+`expense-tracker-db` volume). After pulling new code, run the first command again to rebuild.
+
+### Development (hot reload)
+
 Prerequisites: .NET 8 SDK, Node 20+, Docker.
 
 ```bash
-docker compose up -d db                        # Postgres on localhost:5433
+docker compose up -d db mailpit                # Postgres on localhost:5433, Mailpit on :8025 (SMTP :1025)
 
 cd backend                                     # once: local secrets
 dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5433;Database=expensetracker;Username=expense;Password=expense"
 dotnet user-secrets set "Jwt:Key" "<any random string of 32+ characters>"
+dotnet user-secrets set "Email:SmtpHost" "localhost"   # emails go to Mailpit (without it they're only logged)
 dotnet run --launch-profile http               # API on :5216; applies migrations and the one-time backfill
 
 cd ../frontend

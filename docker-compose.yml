@@ -1,4 +1,6 @@
-# Local database for development: docker compose up -d db
+# The whole app on your computer:   docker compose up --build    → http://localhost:8080
+#   Emails it sends (reset and sign-in links) land in Mailpit at http://localhost:8025; nothing leaves your computer.
+# Development with hot reload only needs the database (and Mailpit for email): docker compose up -d db mailpit (see README).
 services:
   db:
     image: postgres:16-alpine
@@ -11,6 +13,40 @@ services:
       - "5433:5432"
     volumes:
       - expense-tracker-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U expense -d expensetracker"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: expense-tracker-mail
+    ports:
+      - "8025:8025" # inbox in the browser
+      - "1025:1025" # SMTP, for the app container and for `dotnet run`
+
+  # The same image Render runs (Dockerfile), with local settings.
+  app:
+    build: .
+    container_name: expense-tracker-app
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      PORT: "8080"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=expensetracker;Username=expense;Password=expense"
+      # Local only: signs logins on this computer. Render generates its own secret key.
+      Jwt__Key: "local-docker-only-signing-key-0123456789abcdefghij"
+      App__PublicUrl: "http://localhost:8080"
+      Email__SmtpHost: mailpit
+      Email__SmtpPort: "1025"
+      Email__FromAddress: "no-reply@expense-tracker.local"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
 
 volumes:
   expense-tracker-db:
