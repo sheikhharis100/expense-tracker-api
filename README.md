@@ -90,6 +90,23 @@ npm run dev -- --host                          # app on :5173, also reachable fr
 - Add it to the home screen (Share → Add to Home Screen on iPhone, ⋮ → Install app on Android); it opens full screen.
 - To use it anywhere, deploy it (below) and open your Render URL instead.
 
+## Accounts and security
+
+- **Passwords** follow NIST SP 800-63B, with two house rules: at least 8 characters and no spaces. Up to 128
+  characters; common passwords and simple patterns (`12345678`, `Pakistan@123`, your email name) are refused, and so
+  are passwords seen in known data breaches (checked with Have I Been Pwned's k-anonymity API: only the first 5
+  characters of the password's SHA-1 hash leave the server). No forced symbols or rotation, as NIST advises; the sign-up
+  form shows a live checklist and a strength meter instead. Hashing is BCrypt.
+- **Forgot password / sign-in link / email confirmation**: one-time links sent only to the registered address. Only a
+  SHA-256 hash of each link's code is stored; reset links last 30 minutes, sign-in links 15, confirmation links 24
+  hours. The answer is the same whether or not an account exists, and links always use `App:PublicUrl`, never the
+  request's Host header.
+- **Sessions**: resetting or changing the password, or *Sign out of all other devices*, signs every other device out
+  at once. Ten wrong passwords in a row lock password sign-in for 15 minutes (a reset or sign-in link still works).
+  Sign-in and sign-up are rate-limited per address.
+- **Profile** (avatar in the top bar): name, email (change it with your password; the new address must be confirmed),
+  password, devices, and deleting the account with everything in it.
+
 ## Upgrading existing data
 
 `LedgerV2` (EF migration) adds the new tables and columns and moves data in SQL: each transaction gets its owner from
@@ -129,12 +146,14 @@ Everything in this project costs nothing to use:
 | Database | [Neon](https://neon.com) Free plan | $0, no card. Never bills overages; at its limit it pauses until next month and keeps the data |
 | App hosting | [Render](https://render.com) Free web service | $0. Sleeps after 15 min idle and takes up to a minute to wake |
 | Code hosting | GitHub (public or private repo) | $0 |
+| Email (reset & sign-in links) | [Brevo](https://www.brevo.com) Free plan | $0, 300 emails a day. Optional: without it the app works and just hides the email features |
 
 Don't use Render's own free Postgres for this: it is deleted 30 days after it's created.
 
 ### Deploy (about 10 minutes)
 
-1. **Neon** → sign up → *New project* (region: *AWS Asia Pacific (Singapore)* is closest to Pakistan) → *Connect* →
+1. **Neon** → sign up → *New project* (pick the region of your Render service, e.g. *AWS US West 2 (Oregon)* for
+   Render's Oregon or *AWS Asia Pacific (Singapore)* for Render's Singapore; every request talks to the database) → *Connect* →
    copy the connection string with **Connection pooling turned off**. It looks like
    `postgresql://user:password@ep-….ap-southeast-1.aws.neon.tech/neondb?sslmode=require`.
 2. **GitHub**: push this repository.
@@ -143,10 +162,19 @@ Don't use Render's own free Postgres for this: it is deleted 30 days after it's 
    `/healthz`. Add two environment variables:
    - `ConnectionStrings__DefaultConnection` = the Neon string from step 1
    - `Jwt__Key` = any random text of 40+ characters (it signs your logins; keep it secret)
+   - `App__PublicUrl` = `https://<your-service>.onrender.com` (emailed links point here)
 
    Everything else has defaults in `appsettings.json`. Create the service; the first build takes a few minutes, and
    migrations run by themselves on startup.
 4. Open `https://<your-service>.onrender.com` on your phone, sign up, and choose *Add to Home Screen*.
+5. **Email (optional, for "Forgot password?", sign-in links and email confirmation).** Render's free plan blocks normal
+   (SMTP) email, so the app sends through Brevo's web API instead:
+   **Brevo** → sign up free → *Senders, domains & dedicated IPs* → *Senders* → add your email address and confirm it
+   from your inbox → *SMTP & API* → *API keys* → *Generate a new API key*. In Render add:
+   - `Email__BrevoApiKey` = that key
+   - `Email__FromAddress` = the sender address you confirmed
+
+   Save and redeploy. The sign-in screen then shows *Forgot password?* links that work, and *Email me a sign-in link*.
 
 **About the wake-up wait.** A free Render service sleeps after 15 minutes without visits and takes up to a minute to
 wake. You can keep it awake with a free UptimeRobot or cron-job.org monitor on `https://<your-service>.onrender.com/healthz`
