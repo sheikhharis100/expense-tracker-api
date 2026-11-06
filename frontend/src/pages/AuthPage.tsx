@@ -9,18 +9,46 @@ import { passwordProblem } from '../lib/password';
 
 export type AuthMode = 'signin' | 'register' | 'forgot' | 'link';
 
-// The card used by every signed-out screen, including the pages opened from emailed links.
+// The layout of every signed-out screen, including the pages opened from emailed links: a branded panel
+// (beside the form on a computer, a banner above it on a phone) and the form card.
 export function AuthCard({ title, intro, children }: { title: string; intro?: ReactNode; children: ReactNode }) {
   return (
     <div className="auth">
-      <div className="auth-card card">
-        <div className="brand auth-brand">
-          <span className="brand-mark" aria-hidden="true" />
-          Expense Tracker
+      <div className="auth-shell">
+        <aside className="auth-hero">
+          <div className="brand auth-hero-brand">
+            <span className="brand-mark" aria-hidden="true" />
+            Expense Tracker
+          </div>
+          <p className="auth-hero-title">Every rupee, month by month.</p>
+          <p className="auth-hero-text">Log spending in seconds on your phone. Your salary funds the next month and the summary keeps itself up to date.</p>
+          <ul className="auth-points">
+            <li>
+              <Icon name="calendar" size={16} /> Salary and spending, month by month
+            </li>
+            <li>
+              <Icon name="pulse" size={16} /> Live on your phone and computer
+            </li>
+            <li>
+              <Icon name="shield" size={16} /> Private to you, and works offline
+            </li>
+          </ul>
+          <div className="auth-preview" aria-hidden="true">
+            <span className="auth-preview-label">Example month</span>
+            <span className="auth-preview-value">
+              27,600 <small>PKR left</small>
+            </span>
+            <span className="auth-preview-bar">
+              <span style={{ width: '54%' }} />
+            </span>
+            <span className="auth-preview-note">54% of income used · Healthy</span>
+          </div>
+        </aside>
+        <div className="auth-card card">
+          <h1>{title}</h1>
+          {intro && <p className="muted">{intro}</p>}
+          {children}
         </div>
-        <h1>{title}</h1>
-        {intro && <p className="muted">{intro}</p>}
-        {children}
       </div>
     </div>
   );
@@ -34,8 +62,8 @@ const TITLES: Record<AuthMode, string> = {
 };
 
 const INTROS: Record<AuthMode, string> = {
-  signin: 'Your salary, daily spending and every month at a glance. It updates live on every device you sign in on.',
-  register: 'Your salary, daily spending and every month at a glance. It updates live on every device you sign in on.',
+  signin: 'Welcome back. Sign in to see this month.',
+  register: 'Free, and takes a minute. Your entries stay private to your account.',
   forgot: "Enter the email you signed up with and we'll send you a link to choose a new password.",
   link: "We'll email you a link that signs you in. No password needed.",
 };

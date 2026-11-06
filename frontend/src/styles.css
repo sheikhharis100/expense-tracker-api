@@ -2523,17 +2523,216 @@ tfoot .sticky-col {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 24px 16px;
+  padding: 32px 20px;
+}
+
+/* A computer: the branded panel and the form side by side in one rounded frame. */
+.auth-shell {
+  width: 100%;
+  max-width: 980px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  border-radius: 28px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 30px 80px rgba(16, 24, 40, 0.12);
+}
+
+.auth-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 40px;
+  color: #fff;
+  background: linear-gradient(140deg, #065f46 0%, #047857 32%, #0f766e 64%, #155e75 100%);
+}
+
+.auth-hero::before,
+.auth-hero::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.auth-hero::before {
+  width: 420px;
+  height: 420px;
+  right: -160px;
+  top: -180px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 65%);
+}
+
+.auth-hero::after {
+  width: 360px;
+  height: 360px;
+  left: -120px;
+  bottom: -200px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.25), transparent 65%);
+}
+
+.auth-hero > * {
+  position: relative;
+}
+
+.auth-hero-brand {
+  color: #fff;
+  font-size: 17px;
+}
+
+.auth-hero-title {
+  margin: 18px 0 0;
+  font-size: 36px;
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.auth-hero-text {
+  margin: 0;
+  max-width: 36ch;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.55;
+}
+
+.auth-points {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.auth-points li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-points .icon {
+  flex: none;
+  box-sizing: content-box;
+  padding: 7px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.auth-preview {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.auth-preview-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.auth-preview-value {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.auth-preview-value small {
+  font-size: 14px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.auth-preview-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.auth-preview-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.auth-preview-note {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .auth-card {
   width: 100%;
-  max-width: 420px;
-  padding: 28px;
+  align-self: center;
+  padding: 40px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.auth-brand {
-  margin-bottom: 8px;
+/* A phone: the panel becomes a banner and the form card overlaps its bottom edge. */
+@media (max-width: 860px) {
+  .auth {
+    place-items: start center;
+    padding: 0 0 28px;
+  }
+
+  .auth-shell {
+    max-width: 520px;
+    grid-template-columns: 1fr;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .auth-hero {
+    gap: 8px;
+    padding: calc(26px + env(safe-area-inset-top)) 22px 64px;
+    border-radius: 0 0 28px 28px;
+  }
+
+  .auth-hero-title {
+    margin-top: 14px;
+    font-size: 26px;
+  }
+
+  .auth-hero-text {
+    font-size: 14px;
+  }
+
+  .auth-points,
+  .auth-preview {
+    display: none;
+  }
+
+  .auth-card {
+    position: relative;
+    z-index: 1;
+    width: auto;
+    margin: -40px 16px 0;
+    padding: 24px 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+}
+
+/* Edge and IE draw their own "show password" eye; the field already has one. */
+input[type='password']::-ms-reveal,
+input[type='password']::-ms-clear {
+  display: none;
 }
 
 .auth-form {
