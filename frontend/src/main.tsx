@@ -52,6 +52,15 @@ function App() {
   );
 }
 
+// Lets the installed app open from cache while the free server wakes. Production only, so development always runs fresh code.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Without it the app still works; it just needs the network to open.
+    });
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

@@ -13,5 +13,6 @@ export default defineConfig({
       '/hubs': { target: api, changeOrigin: true, ws: true },
     },
   },
-  build: { outDir: 'dist', sourcemap: false },
+  // One bundle on purpose: the service worker caches it whole, so every screen opens offline (~150 kB gzipped).
+  build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 600 },
 });

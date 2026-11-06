@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { ApiError } from '../api/client';
 import { useCategories, useDeleteCategory, useReorderCategories, useSaveCategory } from '../api/hooks';
 import type { Category, CategoryType } from '../api/types';
 import { PALETTE, useSeriesColor } from '../lib/colors';
@@ -44,6 +45,10 @@ export function useMoveCategory() {
   };
 }
 
+// On 409 the server explains what changed; add how to get the latest copy.
+const conflictMessage = (err: Error) =>
+  err instanceof ApiError && err.status === 409 ? `${err.message} Close and reopen to see the latest version.` : err.message;
+
 function nextFreeColor(all: Category[]): string {
   const used = new Set(all.map((c) => c.color.toLowerCase()));
   return PALETTE.find((p) => !used.has(p.light))?.light ?? PALETTE[all.length % PALETTE.length].light;
@@ -65,6 +70,20 @@ function ColumnEditorDialog({ target, onClose }: { target: Target; onClose: () =
   const [type, setType] = useState<CategoryType>(existing?.type ?? ('create' in target ? target.create : 'Expense'));
   const [hex, setHex] = useState(existing?.color ?? nextFreeColor(all));
   const [group, setGroup] = useState(existing?.groupName ?? '');
+  // The category as the form was filled from it. Live updates refresh `existing`; a save must not quietly overwrite
+  // someone else's edit to these fields, but changes the form doesn't show (order, entry count) shouldn't block it.
+  const [base] = useState(existing);
+  const baseVersion = () => {
+    if (!existing) return undefined;
+    const sameFields =
+      !base ||
+      (base.name === existing.name &&
+        base.type === existing.type &&
+        base.color === existing.color &&
+        base.groupName === existing.groupName &&
+        base.isArchived === existing.isArchived);
+    return sameFields ? existing.version : base.version;
+  };
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,22 +118,35 @@ function ColumnEditorDialog({ target, onClose }: { target: Target; onClose: () =
         color: hex,
         groupName: type === 'Expense' ? group.trim() || null : null,
         isArchived: existing?.isArchived ?? false,
+        version: baseVersion(),
       },
       {
         onSuccess: () => {
           toast(isNew ? `Added “${trimmed}”` : `Saved “${trimmed}”`, 'success');
           onClose();
         },
-        onError: (err) => setError(err.message),
+        onError: (err) => setError(conflictMessage(err)),
       },
     );
   };
 
+  // Sends the category exactly as currently shown, so only the archived flag changes.
   const archive = () => {
     if (!existing) return;
     save.mutate(
-      { ...existing, isArchived: !existing.isArchived },
-      { onSuccess: () => (toast(existing.isArchived ? `Restored “${existing.name}”` : `Archived “${existing.name}”`, 'success'), onClose()) },
+      {
+        id: existing.id,
+        name: existing.name,
+        type: existing.type,
+        color: existing.color,
+        groupName: existing.groupName,
+        isArchived: !existing.isArchived,
+        version: existing.version,
+      },
+      {
+        onSuccess: () => (toast(existing.isArchived ? `Restored “${existing.name}”` : `Archived “${existing.name}”`, 'success'), onClose()),
+        onError: (err) => setError(conflictMessage(err)),
+      },
     );
   };
 
@@ -206,7 +238,11 @@ function ColumnEditorDialog({ target, onClose }: { target: Target; onClose: () =
           </div>
         )}
 
-        {error && <p className="error-text">{error}</p>}
+        {error && (
+          <p className="error-text" role="alert">
+            {error}
+          </p>
+        )}
 
         <div className="editor-actions">
           {existing && existing.transactionCount === 0 && (

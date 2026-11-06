@@ -3,6 +3,7 @@ import { HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/s
 import { useQueryClient } from '@tanstack/react-query';
 import { clientId, getToken } from '../api/client';
 import { invalidateFor } from '../api/hooks';
+import { syncOfflineQueue } from '../api/offline';
 import type { LedgerChange } from '../api/types';
 
 export type LiveStatus = 'connecting' | 'live' | 'offline';
@@ -47,8 +48,9 @@ export function LiveProvider({ token, children }: { token: string | null; childr
     connection.onreconnecting(() => setStatus('connecting'));
     connection.onreconnected(() => {
       setStatus('live');
-      // Anything could have changed while we were away.
+      // Anything could have changed while we were away, and entries saved on the phone can go now.
       qc.invalidateQueries();
+      void syncOfflineQueue(qc);
     });
     connection.onclose(() => setStatus('offline'));
 
@@ -57,7 +59,10 @@ export function LiveProvider({ token, children }: { token: string | null; childr
     const start = async (attempt: number) => {
       try {
         await connection.start();
-        if (!stopped) setStatus('live');
+        if (stopped) return;
+        setStatus('live');
+        // Connected means the server is reachable: send anything saved on the phone (overlapping flushes share one pass).
+        void syncOfflineQueue(qc);
       } catch {
         if (stopped) return;
         setStatus('offline');
