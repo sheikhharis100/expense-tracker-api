@@ -1,22 +1,19 @@
-databases:
-  - name: expensetracker-db
-    plan: free
-    databaseName: expensetrackerdb
-    user: expensetracker
-
+# Free hosting: one Render free web service (app + API + live updates) and a Neon free Postgres database.
+# Render's own free Postgres is deliberately not used: it is deleted 30 days after creation.
+# See README "Run it for free".
 services:
   - type: web
     name: expense-tracker-api
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    healthCheckPath: /healthz
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
+      # Paste the Neon connection string (postgresql://…?sslmode=require) when Render asks for it.
       - key: ConnectionStrings__DefaultConnection
-        fromDatabase:
-          name: expensetracker-db
-          property: connectionString
+        sync: false
       - key: Jwt__Key
         generateValue: true
       - key: Jwt__Issuer
@@ -24,7 +21,7 @@ services:
       - key: Jwt__Audience
         value: ExpenseTracker.Client
       - key: Jwt__ExpiryMinutes
-        value: "60"
+        value: "43200"
       - key: BudgetAlerts__WarningThresholdPercent
         value: "80"
       - key: CurrencyRates__ReportingCurrency
