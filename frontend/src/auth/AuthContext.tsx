@@ -7,6 +7,8 @@ interface AuthState {
   token: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
+  // Signs in with a token from an emailed link or a password reset; it may be a different account than before.
+  startSession: (res: AuthResponse) => void;
   signOut: () => void;
 }
 
@@ -25,22 +27,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [qc],
   );
 
+  const startSession = (res: AuthResponse) => {
+    qc.clear();
+    setToken(res.token);
+  };
+
   const value: AuthState = {
     token,
     signIn: async (email, password) => {
-      const res = await api<AuthResponse>('/api/auth/login', { method: 'POST', body: { email, password }, auth: false });
-      qc.clear();
-      setToken(res.token);
+      startSession(await api<AuthResponse>('/api/auth/login', { method: 'POST', body: { email, password }, auth: false }));
     },
     register: async (email, password, displayName) => {
-      const res = await api<AuthResponse>('/api/auth/register', {
-        method: 'POST',
-        body: { email, password, displayName },
-        auth: false,
-      });
-      qc.clear();
-      setToken(res.token);
+      startSession(
+        await api<AuthResponse>('/api/auth/register', {
+          method: 'POST',
+          body: { email, password, displayName },
+          auth: false,
+        }),
+      );
     },
+    startSession,
     signOut: () => setToken(null),
   };
 

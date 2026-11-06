@@ -16,6 +16,8 @@ public static class LedgerScopes
     public const string Recurring = "recurring";
     public const string Columns = "columns";
     public const string Settings = "settings";
+    // The account's sessions were reset: other devices refresh and find their token refused.
+    public const string Session = "session";
 }
 
 // Origin is the X-Client-Id header of the request that made the change, so a device can skip its own echo.

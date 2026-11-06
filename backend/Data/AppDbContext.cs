@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<TableLayout> TableLayouts { get; set; }
     public DbSet<DayNote> DayNotes { get; set; }
     public DbSet<MonthAdjustment> MonthAdjustments { get; set; }
+    public DbSet<AuthToken> AuthTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -185,6 +186,16 @@ public class AppDbContext : DbContext
         {
             e.HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(d => new { d.UserId, d.Date }).IsUnique();
+        });
+
+        modelBuilder.Entity<AuthToken>(e =>
+        {
+            e.Property(t => t.Purpose).HasMaxLength(10);
+            e.Property(t => t.TokenHash).HasMaxLength(64);
+            e.Property(t => t.Email).HasMaxLength(254);
+            e.HasIndex(t => t.TokenHash).IsUnique();
+            e.HasIndex(t => new { t.UserId, t.Purpose });
+            e.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

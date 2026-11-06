@@ -22,6 +22,18 @@ public class MeResponseDto
     public List<string> SupportedCurrencies { get; set; } = new();
     public List<string> PaymentMethods { get; set; } = new();
     public bool NeedsSetup { get; set; }
+    public bool EmailVerified { get; set; }
+    // The local date the account was created.
+    public DateOnly MemberSince { get; set; }
+}
+
+public class ProfileStatsDto
+{
+    // Spending, refund and transfer rows plus income receipts.
+    public int EntriesLogged { get; set; }
+    // Calendar months from the first entry's month to this month, both included; 0 with no entries.
+    public int MonthsTracked { get; set; }
+    public YearMonth? FirstMonth { get; set; }
 }
 
 public class MeUpdateDto

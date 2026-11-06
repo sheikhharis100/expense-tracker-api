@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@fontsource-variable/plus-jakarta-sans';
 import { ApiError } from './api/client';
@@ -16,6 +16,8 @@ import { AdditionalSection, ExpensesSection } from './pages/ExpensesSection';
 import { PlanSection } from './pages/PlanSection';
 import { AnnualPage } from './pages/AnnualPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { LINK_PATHS, ResetPasswordPage, SignInLinkPage, VerifyEmailPage } from './pages/LinkPages';
 import './styles.css';
 
 const queryClient = new QueryClient({
@@ -29,6 +31,17 @@ const queryClient = new QueryClient({
 
 function App() {
   const { token } = useAuth();
+  const { pathname } = useLocation();
+
+  // Links from emails open whether or not this device is signed in.
+  if (LINK_PATHS.includes(pathname))
+    return (
+      <Routes>
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/sign-in-link" element={<SignInLinkPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+      </Routes>
+    );
   if (!token) return <AuthPage />;
 
   return (
@@ -45,6 +58,7 @@ function App() {
           </Route>
           <Route path="/year/:year" element={<AnnualPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   useAccounts,
   useCategories,
@@ -416,6 +416,9 @@ function AccountCard({ me }: { me: Me }) {
       </div>
       <p>
         Signed in as <b>{me.email}</b>. Sign in with the same account on your phone and laptop: every change shows up on both instantly.
+      </p>
+      <p className="muted">
+        Change your email or password, or sign out of other devices, on your <Link to="/profile">Profile</Link>.
       </p>
       <button type="button" className="btn" onClick={signOut}>
         Sign out

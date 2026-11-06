@@ -3,6 +3,7 @@ import { api, currentUserId } from './client';
 import type {
   Account,
   AnnualSummary,
+  AuthOptions,
   BudgetMonth,
   Category,
   CategoryInput,
@@ -22,6 +23,7 @@ import type {
   MonthSetting,
   MonthSummary,
   Occurrence,
+  ProfileStats,
   Receipt,
   ReceiptInput,
   RecurringInput,
@@ -94,6 +96,12 @@ export const useMe = (enabled = true) =>
     enabled,
     staleTime: 60_000,
   });
+
+export const useProfileStats = () => useQuery({ queryKey: ['profile-stats'], queryFn: () => api<ProfileStats>('/api/me/stats') });
+
+// Works signed out (the sign-in screen asks it whether email links can be offered).
+export const useAuthOptions = () =>
+  useQuery({ queryKey: ['auth-options'], queryFn: () => api<AuthOptions>('/api/auth/options', { auth: false }), staleTime: 5 * 60_000 });
 
 export const useSummary = (ym: Ym) =>
   useQuery({ queryKey: ['summary', ym], queryFn: () => api<MonthSummary>(`/api/summary/${ym}`), placeholderData: (p) => p });
