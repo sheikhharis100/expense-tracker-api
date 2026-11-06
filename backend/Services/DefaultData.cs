@@ -37,6 +37,13 @@ public static class DefaultData
         ["Travel (Bus)"] = "Travel — Bus",
     };
 
+    // True when two names mean the same category, including the old and new spellings of the travel columns.
+    public static bool SameCategory(string a, string b)
+    {
+        static string Canonical(string name) => Aliases.TryGetValue(name.Trim(), out var alias) ? alias : name.Trim();
+        return Canonical(a).Equals(Canonical(b), StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string NextColor(IEnumerable<string> usedColors)
     {
         var used = new HashSet<string>(usedColors, StringComparer.OrdinalIgnoreCase);
@@ -75,9 +82,7 @@ public static class DefaultData
         }
 
         var existing = await context.Categories.Where(c => c.UserId == user.Id).ToListAsync();
-        bool Has(string name) => existing.Any(c =>
-            c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-            || (Aliases.TryGetValue(c.Name, out var alias) && alias.Equals(name, StringComparison.OrdinalIgnoreCase)));
+        bool Has(string name) => existing.Any(c => SameCategory(c.Name, name));
 
         void Add(string name, string type, string? group)
         {

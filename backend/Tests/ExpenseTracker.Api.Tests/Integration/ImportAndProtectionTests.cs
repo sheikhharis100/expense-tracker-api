@@ -22,9 +22,12 @@ public class ImportAndProtectionTests
         Assert.Equal(10, result["entriesCreated"]!.GetValue<int>());
         Assert.Equal(3, result["notesImported"]!.GetValue<int>());
         Assert.Equal(1, result["salariesImported"]!.GetValue<int>());
+        // The sheet's "Travel (InDrive)" column lands in the built-in "Travel — InDrive" category, not a duplicate.
+        Assert.Empty(result["categoriesCreated"]!.AsArray());
 
         var rows = (await api.Get("/api/expenses?month=2026-11"))["rows"]!.AsArray();
         Assert.Equal(10, rows.Count);
+        Assert.Contains(rows, r => r!["categoryName"]!.GetValue<string>() == "Travel — InDrive");
         Assert.All(rows, r =>
         {
             Assert.Equal("Expense", r!["kind"]!.GetValue<string>());

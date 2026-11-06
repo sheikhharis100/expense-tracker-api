@@ -41,7 +41,9 @@ public class SheetImportService
         var byColumn = new Dictionary<string, Category>(StringComparer.OrdinalIgnoreCase);
         foreach (var column in parsed.CategoryColumns.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var category = categories.FirstOrDefault(c => c.Name.Equals(column, StringComparison.OrdinalIgnoreCase));
+            // Exact name first, then the old/new spelling of the same column ("Travel (InDrive)" = "Travel — InDrive").
+            var category = categories.FirstOrDefault(c => c.Type == "Expense" && c.Name.Equals(column, StringComparison.OrdinalIgnoreCase))
+                ?? categories.FirstOrDefault(c => c.Type == "Expense" && DefaultData.SameCategory(c.Name, column));
             if (category == null)
             {
                 category = new Category
