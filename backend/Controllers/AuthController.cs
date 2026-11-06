@@ -4,6 +4,7 @@ using System.Text;
 using BCrypt.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ExpenseTracker.Api.Data;
@@ -27,6 +28,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [EnableRateLimiting(RateLimits.Auth)]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
     {
         var email = NormalizeEmail(request.Email);
@@ -61,6 +63,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimits.Auth)]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
         var email = NormalizeEmail(request.Email);

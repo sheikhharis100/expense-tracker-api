@@ -102,6 +102,9 @@ dotnet test                 # backend: calculator, salary, calendar, sheet impor
 cd frontend && npm test     # cell parsing and the health read-out
 ```
 
+GitHub Actions (`.github/workflows/ci.yml`) runs the backend tests, the frontend tests and the frontend build on every
+push and pull request.
+
 ## Run it for free
 
 Everything in this project costs nothing to use:

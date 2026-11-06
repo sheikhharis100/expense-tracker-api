@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Npgsql;
 using System.Text;
+using System.Threading.RateLimiting;
 using ExpenseTracker.Api.Data;
 using ExpenseTracker.Api.Hubs;
 using ExpenseTracker.Api.Ledger;
@@ -84,6 +87,33 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+// On Render, Cloudflare and then Render's proxy each append to X-Forwarded-For: "…, client, cloudflare-edge".
+// Their addresses aren't fixed, so any proxy is trusted, but only those last two entries are read: anything
+// further left came from the client and could be spoofed.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 2;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+// Slows password guessing and sign-up spam: a fixed number of sign-in/registration attempts per client IP per minute.
+var authPerMinute = builder.Configuration.GetValue("RateLimiting:AuthPerMinute", 10);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(RateLimits.Auth, context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = authPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+        await context.HttpContext.Response.WriteAsJsonAsync(new { error = "Too many attempts. Wait a minute and try again." }, cancellationToken);
+    };
+});
+
 builder.Services.Configure<CurrencyRatesOptions>(builder.Configuration.GetSection("CurrencyRates"));
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<CurrencyConverter>();
@@ -113,6 +143,25 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
     // One-time, per-user upgrade of records from the first version (see LegacyBackfillService).
     await scope.ServiceProvider.GetRequiredService<LegacyBackfillService>().RunAsync();
 }
+
+// First, so the rate limiter and everything else sees the real client IP and scheme.
+app.UseForwardedHeaders();
+
+// Set when the response starts, so error responses (which clear headers) and rejections get them too.
+// No Content-Security-Policy: Swagger UI relies on inline script.
+app.Use((context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var headers = context.Response.Headers;
+        headers["X-Content-Type-Options"] = "nosniff";
+        headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        headers["X-Frame-Options"] = "DENY";
+        headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+        return Task.CompletedTask;
+    });
+    return next(context);
+});
 
 app.UseExceptionHandler(errorApp =>
 {
@@ -148,6 +197,7 @@ else
     app.MapGet("/", () => Results.Redirect("/swagger"));
 }
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

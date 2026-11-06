@@ -526,6 +526,7 @@ public class SalaryPlanDto
     public decimal BaseSalary { get; set; }
     public decimal Allowances { get; set; }
     public string Note { get; set; } = string.Empty;
+    public uint Version { get; set; }
 }
 
 public class SalaryPlanInputDto
@@ -536,6 +537,9 @@ public class SalaryPlanInputDto
 
     [StringLength(200)]
     public string Note { get; set; } = string.Empty;
+
+    // Omitted: the plan for that month is overwritten whatever its version.
+    public uint? Version { get; set; }
 }
 
 public class SalaryComponentDto

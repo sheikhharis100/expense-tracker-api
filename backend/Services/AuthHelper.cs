@@ -14,3 +14,9 @@ public static class AuthHelper
         return userId;
     }
 }
+
+// Rate limiter policy names (configured in Program.cs).
+public static class RateLimits
+{
+    public const string Auth = "auth";
+}

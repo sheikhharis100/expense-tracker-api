@@ -45,6 +45,7 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Category>(e =>
         {
+            e.Property(c => c.Version).IsRowVersion();
             e.HasOne(c => c.User).WithMany(u => u.Categories).HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -112,6 +113,7 @@ public class AppDbContext : DbContext
             e.ToTable("SalaryRecords");
             e.Property(s => s.Amount).HasColumnType(money);
             e.Property(s => s.Allowances).HasColumnType(money);
+            e.Property(s => s.Version).IsRowVersion();
             e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => new { s.UserId, s.Year, s.Month }).IsUnique();
         });

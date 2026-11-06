@@ -29,20 +29,26 @@ public sealed class ApiFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _db.StartAsync();
-        Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        // Every test signs up from the same (test server) address, so sign-in limits must not get in the way.
+        Factory = CreateFactory(authPerMinute: 100_000);
+        _ = Factory.CreateClient();
+    }
+
+    // Another app over the same database, for tests that need different settings. The caller disposes it.
+    public WebApplicationFactory<Program> CreateFactory(int authPerMinute) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseEnvironment("Testing");
             b.UseSetting("ConnectionStrings:DefaultConnection", _db.GetConnectionString());
             b.UseSetting("Jwt:Key", "integration-test-signing-key-0123456789abcdefghij");
             b.UseSetting("BackgroundJobs:Enabled", "false");
+            b.UseSetting("RateLimiting:AuthPerMinute", authPerMinute.ToString());
             b.ConfigureServices(services =>
             {
                 services.RemoveAll<IClock>();
                 services.AddSingleton<IClock>(Clock);
             });
         });
-        _ = Factory.CreateClient();
-    }
 
     public async Task DisposeAsync()
     {
@@ -102,6 +108,16 @@ public sealed class Api
     public Task<JsonNode?> Put(string url, object body, HttpStatusCode? expect = null) => Send(HttpMethod.Put, url, body, expect);
     public Task<JsonNode?> Patch(string url, object body, HttpStatusCode? expect = null) => Send(HttpMethod.Patch, url, body, expect);
     public Task<JsonNode?> Delete(string url, HttpStatusCode? expect = null) => Send(HttpMethod.Delete, url, null, expect);
+
+    // Posts a file as the multipart "file" field, the way the import screens do.
+    public async Task<JsonNode> Upload(string url, string fileName, string content)
+    {
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(content), "file", fileName);
+        var res = await Http.PostAsync(url, form);
+        await Ensure(res, url);
+        return JsonNode.Parse(await res.Content.ReadAsStringAsync())!;
+    }
 
     private static async Task Ensure(HttpResponseMessage res, string url)
     {

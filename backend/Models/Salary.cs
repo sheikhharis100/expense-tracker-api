@@ -12,6 +12,7 @@ public class SalaryPlan
     public decimal Amount { get; set; }
     public decimal Allowances { get; set; }
     public string Note { get; set; } = string.Empty;
+    public uint Version { get; set; }
 }
 
 // The salary earned for one month and the budget month it funds. Once saved it no longer follows the plan,

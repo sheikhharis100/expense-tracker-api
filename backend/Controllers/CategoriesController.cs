@@ -96,13 +96,33 @@ public class CategoriesController : ControllerBase
         if (category.Type != dto.Type && await _context.Transactions.AnyAsync(t => t.CategoryId == id))
             return BadRequest("Can't switch between income and expense once a category has entries");
 
+        if (dto.Version is uint version)
+            _context.Entry(category).Property(c => c.Version).OriginalValue = version;
+
         category.Name = name;
         category.Type = dto.Type;
         category.Color = dto.Color ?? category.Color;
         category.GroupName = NormalizeGroup(dto.GroupName);
         category.IsArchived = dto.IsArchived;
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _context.ChangeTracker.Clear();
+            var current = await _context.Categories
+                .Where(c => c.Id == id && c.UserId == userId)
+                .Select(c => new { Category = c, Count = c.Transactions.Count })
+                .FirstOrDefaultAsync();
+            return Conflict(new
+            {
+                error = "This category was changed on another device. Your edit wasn't saved; the latest version is shown.",
+                current = current == null ? null : MapToResponse(current.Category, current.Count)
+            });
+        }
+
         await _notifier.NotifyAsync(userId, LedgerScopes.Categories);
         return NoContent();
     }
@@ -161,7 +181,8 @@ public class CategoriesController : ControllerBase
             SortOrder = category.SortOrder,
             GroupName = category.GroupName,
             IsArchived = category.IsArchived,
-            TransactionCount = transactionCount
+            TransactionCount = transactionCount,
+            Version = category.Version
         };
     }
 }

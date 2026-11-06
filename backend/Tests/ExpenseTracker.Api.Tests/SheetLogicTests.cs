@@ -69,8 +69,8 @@ public class YearMonthTests
 
 public class SheetCsvParserTests
 {
-    // Shaped like File → Download → CSV of the "Daily Log" tab.
-    private const string DailyLogCsv =
+    // Shaped like File → Download → CSV of the "Daily Log" tab. Also used by the import integration test.
+    internal const string DailyLogCsv =
         "\"Type each day's spending in the yellow cells (PKR).\",,,,,,,,,,\n" +
         "Date,Day,Month,Bill / Rent,Food,Travel (InDrive),Travel (Bus),Other Expenses,Daily Total,Expense details (auto),Remarks\n" +
         "NOVEMBER 2026,,,\"Salary (Oct pay): 55,000    Income: 60,500    Spent: 30,495\",,,,,,,\n" +

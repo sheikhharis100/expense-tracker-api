@@ -25,10 +25,11 @@ public class IncomeService
     // ---------- Plans ----------
 
     public async Task<List<SalaryPlanDto>> PlansAsync(int userId) =>
-        await _db.SalaryPlans.AsNoTracking().Where(p => p.UserId == userId)
+        (await _db.SalaryPlans.AsNoTracking().Where(p => p.UserId == userId)
             .OrderBy(p => p.Year).ThenBy(p => p.Month)
-            .Select(p => new SalaryPlanDto { Id = p.Id, EffectiveFrom = new YearMonth(p.Year, p.Month), BaseSalary = p.Amount, Allowances = p.Allowances, Note = p.Note })
-            .ToListAsync();
+            .ToListAsync())
+        .Select(ToDto)
+        .ToList();
 
     // A plan change applies from its effective month on; saved statements are never rewritten by it.
     public async Task<ServiceResult<SalaryPlanDto>> UpsertPlanAsync(int userId, SalaryPlanInputDto dto)
@@ -43,12 +44,39 @@ public class IncomeService
             plan = new SalaryPlan { UserId = userId, Year = dto.EffectiveFrom.Year, Month = dto.EffectiveFrom.Month };
             _db.SalaryPlans.Add(plan);
         }
+        else if (dto.Version is uint version && version != plan.Version)
+        {
+            return StalePlan(plan);
+        }
         plan.Amount = dto.BaseSalary;
         plan.Allowances = dto.Allowances;
         plan.Note = dto.Note.Trim();
-        await _db.SaveChangesAsync();
-        return ServiceResult<SalaryPlanDto>.Ok(new SalaryPlanDto { Id = plan.Id, EffectiveFrom = dto.EffectiveFrom, BaseSalary = plan.Amount, Allowances = plan.Allowances, Note = plan.Note });
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Changed between our read and write.
+            _db.ChangeTracker.Clear();
+            var current = await _db.SalaryPlans.AsNoTracking().FirstOrDefaultAsync(p => p.Id == plan.Id);
+            return current == null ? ServiceResult<SalaryPlanDto>.Fail("Not found", 404) : StalePlan(current);
+        }
+        return ServiceResult<SalaryPlanDto>.Ok(ToDto(plan));
     }
+
+    private static ServiceResult<SalaryPlanDto> StalePlan(SalaryPlan current) =>
+        ServiceResult<SalaryPlanDto>.Fail("This salary plan was changed on another device. Your edit wasn't saved; the latest version is shown.", 409, ToDto(current));
+
+    private static SalaryPlanDto ToDto(SalaryPlan p) => new()
+    {
+        Id = p.Id,
+        Version = p.Version,
+        EffectiveFrom = new YearMonth(p.Year, p.Month),
+        BaseSalary = p.Amount,
+        Allowances = p.Allowances,
+        Note = p.Note
+    };
 
     public async Task<bool> DeletePlanAsync(int userId, int id)
     {

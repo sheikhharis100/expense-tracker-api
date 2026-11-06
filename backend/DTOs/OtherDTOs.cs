@@ -70,6 +70,9 @@ public class CategoryUpdateDto
     public string? GroupName { get; set; }
 
     public bool IsArchived { get; set; }
+
+    // Omitted: the edit overwrites whatever is saved.
+    public uint? Version { get; set; }
 }
 
 public class CategoryReorderDto
@@ -88,6 +91,7 @@ public class CategoryResponseDto
     public string? GroupName { get; set; }
     public bool IsArchived { get; set; }
     public int TransactionCount { get; set; }
+    public uint Version { get; set; }
 }
 
 public class CsvImportResponseDto

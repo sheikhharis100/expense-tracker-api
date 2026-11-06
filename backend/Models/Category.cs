@@ -15,4 +15,7 @@ public class Category
     public bool IsArchived { get; set; }
     public List<Transaction> Transactions { get; set; } = new();
     public List<Budget> Budgets { get; set; } = new();
+
+    // Postgres xmin; stale edits fail instead of overwriting newer changes.
+    public uint Version { get; set; }
 }
