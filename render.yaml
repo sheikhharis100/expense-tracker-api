@@ -16,6 +16,14 @@ services:
         sync: false
       - key: Jwt__Key
         generateValue: true
+      # Emailed links (password reset, sign-in, verification) point here; never taken from the request.
+      - key: App__PublicUrl
+        value: https://expense-tracker-api-1bsk.onrender.com
+      # Brevo (free, 300 emails/day; Render's free plan blocks SMTP). Without a key, email features stay hidden.
+      - key: Email__BrevoApiKey
+        sync: false
+      - key: Email__FromAddress
+        sync: false
       - key: Jwt__Issuer
         value: ExpenseTracker.Api
       - key: Jwt__Audience
