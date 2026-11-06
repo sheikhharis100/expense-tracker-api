@@ -39,13 +39,20 @@ export function SettingsPage() {
           <h1>Your tracker</h1>
         </div>
       </header>
-      <AppearanceCard />
-      {me.data && <ProfileCard me={me.data} />}
-      {me.data && <SalaryPlans me={me.data} />}
-      <CategoriesCard />
-      <AccountsCard />
-      <ImportCard />
-      {me.data && <AccountCard me={me.data} />}
+      {/* Two columns of cards on a wide screen, one column elsewhere (same order as before). */}
+      <div className="wide-columns">
+        <div className="stack">
+          <AppearanceCard />
+          {me.data && <ProfileCard me={me.data} />}
+          {me.data && <SalaryPlans me={me.data} />}
+          <ImportCard />
+        </div>
+        <div className="stack">
+          <CategoriesCard />
+          <AccountsCard />
+          {me.data && <AccountCard me={me.data} />}
+        </div>
+      </div>
     </div>
   );
 }

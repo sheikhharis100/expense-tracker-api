@@ -41,9 +41,9 @@ function SummaryBody({ s }: { s: MonthSummary }) {
           {f.timing === 'current' && <Allowance f={f} />}
           <PlanCard f={f} />
           <Comparison s={s} />
+          <BudgetTable f={f} />
         </div>
       </div>
-      <BudgetTable f={f} />
       <div className="grid-2 grid-2-wide-right">
         <WhereItWent f={f} />
         <DailyChart f={f} today={s.today} />

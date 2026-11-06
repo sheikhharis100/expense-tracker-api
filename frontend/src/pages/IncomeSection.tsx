@@ -79,23 +79,27 @@ function IncomeBody({ d }: { d: IncomeMonth }) {
         allocated to.
       </p>
 
-      {d.funding.length === 0 ? (
-        <NoSalary ym={ym} lag={d.salaryLagMonths} />
-      ) : (
-        d.funding.map((s) => <StatementCard key={s.earned} s={s} />)
-      )}
+      {/* Side by side on a wide screen, one after the other elsewhere. */}
+      <div className="wide-columns">
+        <div className="stack">
+          {d.funding.length === 0 ? (
+            <NoSalary ym={ym} lag={d.salaryLagMonths} />
+          ) : (
+            d.funding.map((s) => <StatementCard key={s.earned} s={s} />)
+          )}
 
-      {d.earnedThisMonth && d.earnedThisMonth.funded !== ym && (
-        <p className="muted small">
-          {ymLongLabel(ym)} salary ({money(d.earnedThisMonth.expectedNet)} expected) funds{' '}
-          <Link className="link" to={`/m/${d.earnedThisMonth.funded}/income`}>
-            {ymLongLabel(d.earnedThisMonth.funded)}
-          </Link>
-          .
-        </p>
-      )}
-
-      <OtherIncome d={d} />
+          {d.earnedThisMonth && d.earnedThisMonth.funded !== ym && (
+            <p className="muted small">
+              {ymLongLabel(ym)} salary ({money(d.earnedThisMonth.expectedNet)} expected) funds{' '}
+              <Link className="link" to={`/m/${d.earnedThisMonth.funded}/income`}>
+                {ymLongLabel(d.earnedThisMonth.funded)}
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+        <OtherIncome d={d} />
+      </div>
     </>
   );
 }
