@@ -2982,3 +2982,7 @@ body.is-resizing .col-resize {
     display: none;
   }
 }
+
+.wake-offline {
+  background: var(--warning-wash);
+}

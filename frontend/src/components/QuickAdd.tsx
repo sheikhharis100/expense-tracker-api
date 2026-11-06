@@ -41,6 +41,8 @@ function recall(key: string): string | null {
 export function QuickAddProvider({ children }: { children: ReactNode }) {
   const [preset, setPreset] = useState<Parameters<QuickAddApi['open']>[0] | null>(null);
   const monthMatch = useMatch('/m/:ym/*');
+  // Load categories with the app, so the device copy exists before the phone ever goes offline.
+  useCategories();
 
   return (
     <QuickAddContext.Provider value={{ open: (p) => setPreset(p ?? {}) }}>

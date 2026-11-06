@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { api } from './client';
+import { api, currentUserId } from './client';
 import type {
   Account,
   AnnualSummary,
@@ -62,7 +62,38 @@ const qs = (params: Record<string, string | number | boolean | undefined | null>
 
 // ---------- Reads ----------
 
-export const useMe = (enabled = true) => useQuery({ queryKey: ['me'], queryFn: () => api<Me>('/api/me'), enabled, staleTime: 60_000 });
+// The profile and categories are kept on the device (per account) so the app, and quick add in particular,
+// still work with no connection. The copy is shown at once and refreshed as soon as the server answers.
+const deviceKey = (name: string) => `expense-tracker.cache.${currentUserId() ?? 'signed-out'}.${name}`;
+
+function fromDevice<T>(name: string): T | undefined {
+  try {
+    const raw = localStorage.getItem(deviceKey(name));
+    return raw ? (JSON.parse(raw) as T) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function andKeep<T>(name: string, request: Promise<T>): Promise<T> {
+  const value = await request;
+  try {
+    localStorage.setItem(deviceKey(name), JSON.stringify(value));
+  } catch {
+    // Storage full or blocked: the app still works online.
+  }
+  return value;
+}
+
+export const useMe = (enabled = true) =>
+  useQuery({
+    queryKey: ['me'],
+    queryFn: () => andKeep('me', api<Me>('/api/me')),
+    initialData: () => fromDevice<Me>('me'),
+    initialDataUpdatedAt: 0,
+    enabled,
+    staleTime: 60_000,
+  });
 
 export const useSummary = (ym: Ym) =>
   useQuery({ queryKey: ['summary', ym], queryFn: () => api<MonthSummary>(`/api/summary/${ym}`), placeholderData: (p) => p });
@@ -94,7 +125,13 @@ export const useRecurring = (ym: Ym) =>
 export const useMonthSettings = (ym: Ym) =>
   useQuery({ queryKey: ['monthSettings', ym], queryFn: () => api<MonthSetting>(`/api/months/${ym}/settings`) });
 
-export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: () => api<Category[]>('/api/categories') });
+export const useCategories = () =>
+  useQuery({
+    queryKey: ['categories'],
+    queryFn: () => andKeep('categories', api<Category[]>('/api/categories')),
+    initialData: () => fromDevice<Category[]>('categories'),
+    initialDataUpdatedAt: 0,
+  });
 
 export const useAccounts = () => useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') });
 

@@ -1,12 +1,14 @@
 import { useSyncExternalStore } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
-import { api, ApiError, NetworkError } from './client';
+import { api, ApiError, currentUserId, NetworkError, onTokenChange } from './client';
 import { invalidateFor, useCreateExpense } from './hooks';
 import type { ExpenseInput, ExpenseRow } from './types';
 import { createOfflineQueue } from '../lib/offlineQueue';
 import { toast } from '../components/Toast';
 
 const QUEUE_KEY = 'expense-tracker.offline-queue';
+// One queue per account, so entries saved offline only ever sync to the account that saved them.
+const queueKey = () => `${QUEUE_KEY}.${currentUserId() ?? 'signed-out'}`;
 
 export const QUEUED_MESSAGE = 'Saved on this phone — it will sync when you’re back online';
 const MEMORY_ONLY_MESSAGE = 'Saved for now — keep the app open until it syncs (this browser won’t store it)';
@@ -15,7 +17,7 @@ export const offlineQueue = createOfflineQueue({
   storage: {
     load() {
       try {
-        const raw = localStorage.getItem(QUEUE_KEY);
+        const raw = localStorage.getItem(queueKey());
         return raw ? JSON.parse(raw) : [];
       } catch {
         return [];
@@ -23,8 +25,8 @@ export const offlineQueue = createOfflineQueue({
     },
     save(items) {
       try {
-        if (items.length) localStorage.setItem(QUEUE_KEY, JSON.stringify(items));
-        else localStorage.removeItem(QUEUE_KEY);
+        if (items.length) localStorage.setItem(queueKey(), JSON.stringify(items));
+        else localStorage.removeItem(queueKey());
         return true;
       } catch {
         return false;
@@ -35,7 +37,10 @@ export const offlineQueue = createOfflineQueue({
   send: (item) => api<ExpenseRow>('/api/expenses', { method: 'POST', body: { ...item.input, clientRequestId: item.clientRequestId } }),
 });
 
-export const isQueueKey = (key: string | null) => key === QUEUE_KEY;
+// Signing in as someone else switches to their queue; the previous account's entries wait for it.
+onTokenChange(() => offlineQueue.reload());
+
+export const isQueueKey = (key: string | null) => key === queueKey();
 
 // The request never reached the app: no connection, or the host's gateway answered while the server was down/asleep.
 export function isOfflineFailure(err: unknown): boolean {

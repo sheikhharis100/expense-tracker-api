@@ -206,8 +206,10 @@ app.MapHub<LedgerHub>("/hubs/ledger");
 
 if (hasFrontend)
 {
-    // Client-side routes (/log, /months, …) load the app; unknown /api paths still 404.
-    app.MapFallbackToFile("{*path:regex(^(?!api/|hubs/|swagger).*$)}", "index.html");
+    // Client-side routes (/m/2026-11, /settings, …) load the app. The default pattern only matches paths without a
+    // file extension, so real files (/assets/*.js, /sw.js) are still served by UseStaticFiles; unknown /api paths 404.
+    app.MapFallback("api/{**rest}", () => Results.NotFound(new { error = "Not found" }));
+    app.MapFallbackToFile("index.html");
 }
 
 app.Run();

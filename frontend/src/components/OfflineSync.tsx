@@ -121,8 +121,24 @@ export function SyncSheet({ onClose }: { onClose: () => void }) {
 }
 
 // Shown while any request has waited a few seconds: on the free host that's the server waking up.
+const subscribeOnline = (cb: () => void) => {
+  window.addEventListener('online', cb);
+  window.addEventListener('offline', cb);
+  return () => {
+    window.removeEventListener('online', cb);
+    window.removeEventListener('offline', cb);
+  };
+};
+
 export function WakingBanner() {
   const slow = useSyncExternalStore(subscribeSlowRequests, hasSlowRequests);
+  const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
+  if (!online)
+    return (
+      <div className="wake-banner wake-offline" role="status">
+        You're offline. Add expenses with + as usual: they're kept on this phone and sync when you're back online.
+      </div>
+    );
   if (!slow) return null;
   return (
     <div className="wake-banner" role="status">

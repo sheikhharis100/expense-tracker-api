@@ -32,6 +32,20 @@ export function setToken(token: string | null) {
   listeners.forEach((fn) => fn(token));
 }
 
+// The signed-in user's id, read from the token (no request needed). Used to keep per-user data on the device apart.
+export function currentUserId(): string | null {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), '=')));
+    const id = claims.nameid ?? claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'];
+    return id == null ? null : String(id);
+  } catch {
+    return null;
+  }
+}
+
 export function onTokenChange(fn: (token: string | null) => void) {
   listeners.add(fn);
   return () => {

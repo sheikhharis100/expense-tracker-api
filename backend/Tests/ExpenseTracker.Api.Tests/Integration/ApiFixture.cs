@@ -35,10 +35,11 @@ public sealed class ApiFixture : IAsyncLifetime
     }
 
     // Another app over the same database, for tests that need different settings. The caller disposes it.
-    public WebApplicationFactory<Program> CreateFactory(int authPerMinute) =>
+    public WebApplicationFactory<Program> CreateFactory(int authPerMinute, string? webRoot = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseEnvironment("Testing");
+            if (webRoot != null) b.UseSetting(WebHostDefaults.WebRootKey, webRoot);
             b.UseSetting("ConnectionStrings:DefaultConnection", _db.GetConnectionString());
             b.UseSetting("Jwt:Key", "integration-test-signing-key-0123456789abcdefghij");
             b.UseSetting("BackgroundJobs:Enabled", "false");
