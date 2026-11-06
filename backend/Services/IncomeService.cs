@@ -11,6 +11,9 @@ namespace ExpenseTracker.Api.Services;
 // allocations to budget months. Only received receipts are income; statements and plans are expectations.
 public class IncomeService
 {
+    // The salary rule allows a lag of 0–3 months; a statement may be moved further, but not years ahead.
+    public const int MaxFundingLag = 12;
+
     private readonly AppDbContext _db;
     private readonly IClock _clock;
     private readonly LedgerLoader _loader;
@@ -34,9 +37,12 @@ public class IncomeService
     // A plan change applies from its effective month on; saved statements are never rewritten by it.
     public async Task<ServiceResult<SalaryPlanDto>> UpsertPlanAsync(int userId, SalaryPlanInputDto dto)
     {
-        if (dto.BaseSalary < 0 || dto.Allowances < 0 || !Money.HasValidScale(dto.BaseSalary) || !Money.HasValidScale(dto.Allowances))
-            return ServiceResult<SalaryPlanDto>.Fail("Salary amounts must be zero or more with at most 2 decimals.");
-        if (!YearMonth.IsValid(dto.EffectiveFrom.Year, dto.EffectiveFrom.Month)) return ServiceResult<SalaryPlanDto>.Fail("Invalid month.");
+        var note = InputRules.Clean(dto.Note);
+        var problem = InputRules.Month(dto.EffectiveFrom, "The month the plan starts")
+            ?? InputRules.NonNegative(dto.BaseSalary, "Base salary")
+            ?? InputRules.NonNegative(dto.Allowances, "Allowances")
+            ?? InputRules.Text(note, 200, "Note");
+        if (problem != null) return ServiceResult<SalaryPlanDto>.Fail(problem);
 
         var plan = await _db.SalaryPlans.FirstOrDefaultAsync(p => p.UserId == userId && p.Year == dto.EffectiveFrom.Year && p.Month == dto.EffectiveFrom.Month);
         if (plan == null)
@@ -50,7 +56,7 @@ public class IncomeService
         }
         plan.Amount = dto.BaseSalary;
         plan.Allowances = dto.Allowances;
-        plan.Note = dto.Note.Trim();
+        plan.Note = note;
         try
         {
             await _db.SaveChangesAsync();
@@ -206,11 +212,21 @@ public class IncomeService
         foreach (var c in dto.Components)
         {
             if (!SalaryComponentKind.All.Contains(c.Kind)) return ServiceResult<SalaryStatement>.Fail($"Unknown component {c.Kind}.");
-            if (!Money.HasValidScale(c.Amount) || Math.Abs(c.Amount) > Money.Max) return ServiceResult<SalaryStatement>.Fail("Amounts allow at most 2 decimals.");
+            var label = string.IsNullOrWhiteSpace(c.Label) ? c.Kind : c.Label;
+            if (InputRules.Signed(c.Amount, label) is { } amountError) return ServiceResult<SalaryStatement>.Fail(amountError);
             if (c.Kind != SalaryComponentKind.Adjustment && c.Amount < 0)
                 return ServiceResult<SalaryStatement>.Fail($"{c.Kind} must be zero or more; use Adjustment for signed changes.");
+            c.Label = InputRules.Clean(c.Label);
+            if (InputRules.Text(c.Label, 100, "Label") is { } labelError) return ServiceResult<SalaryStatement>.Fail(labelError);
         }
+        var note = InputRules.Clean(dto.Note);
+        var problem = InputRules.Month(dto.Funded, "The month it funds") ?? InputRules.Text(note, InputRules.DescriptionLength, "Note");
+        if (problem != null) return ServiceResult<SalaryStatement>.Fail(problem);
         if (dto.Funded < earned) return ServiceResult<SalaryStatement>.Fail("A salary can't fund a month before it was earned.");
+        if (dto.Funded > earned.AddMonths(MaxFundingLag))
+            return ServiceResult<SalaryStatement>.Fail($"A salary can fund a month at most {MaxFundingLag} months after it was earned.");
+        var expected = SalaryMath.ExpectedNet(dto.Components.Select(c => new LedgerComponent(c.Kind, c.Label, c.Amount)).ToList());
+        if (expected < 0) return ServiceResult<SalaryStatement>.Fail("Deductions can't be more than the salary; the expected net would be negative.");
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         var statement = await _db.SalaryStatements.Include(s => s.Components)
@@ -228,7 +244,7 @@ public class IncomeService
         var oldFunded = new YearMonth(statement.FundedYear == 0 ? dto.Funded.Year : statement.FundedYear, statement.FundedMonth == 0 ? dto.Funded.Month : statement.FundedMonth);
         statement.FundedYear = dto.Funded.Year;
         statement.FundedMonth = dto.Funded.Month;
-        statement.Note = dto.Note.Trim();
+        statement.Note = note;
         _db.SalaryComponents.RemoveRange(statement.Components);
         statement.Components = dto.Components.Select((c, i) => new SalaryComponent
         {
@@ -358,7 +374,14 @@ public class IncomeService
     private async Task<ServiceResult<ReceiptDto>> SaveReceiptAsync(User user, IncomeReceipt receipt, ReceiptInputDto dto, bool isNew)
     {
         var today = LocalCalendar.Today(_clock, user.TimeZone);
-        if (!Money.IsValidAmount(dto.Amount)) return ServiceResult<ReceiptDto>.Fail("Amount must be greater than zero with at most 2 decimals.");
+        var description = InputRules.Clean(dto.Description);
+        var problem = InputRules.Amount(dto.Amount)
+            ?? InputRules.Date(dto.ReceivedDate, "Received date")
+            ?? InputRules.Date(dto.ExpectedDate, "Expected date")
+            ?? InputRules.PaymentMethod(dto.PaymentMethod)
+            ?? InputRules.Text(description, InputRules.DescriptionLength, "Note")
+            ?? (dto.DefaultMonth is YearMonth month ? InputRules.Month(month) : null);
+        if (problem != null) return ServiceResult<ReceiptDto>.Fail(problem);
 
         if (dto.Status == ReceiptStatus.Received)
         {
@@ -374,6 +397,9 @@ public class IncomeService
         {
             var category = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == categoryId && c.UserId == user.Id);
             if (category == null || category.Type != "Income") return ServiceResult<ReceiptDto>.Fail("Choose an income category.");
+            // Archived categories keep their old income but take no new receipts.
+            if (category.IsArchived && (isNew || receipt.CategoryId != categoryId))
+                return ServiceResult<ReceiptDto>.Fail($"“{category.Name}” is archived; restore it to add income to it.");
         }
 
         var fallbackMonth = dto.DefaultMonth
@@ -385,6 +411,8 @@ public class IncomeService
                 : ScaleSingle(receipt, dto.Amount);
 
         if (allocations.Any(a => !Money.IsValidAmount(a.Amount))) return ServiceResult<ReceiptDto>.Fail("Each allocation must be greater than zero.");
+        if (allocations.Select(a => InputRules.Month(a.Month, "Each allocation's month")).FirstOrDefault(e => e != null) is { } monthError)
+            return ServiceResult<ReceiptDto>.Fail(monthError);
         if (allocations.Select(a => a.Month).Distinct().Count() != allocations.Count) return ServiceResult<ReceiptDto>.Fail("Allocate to each month once.");
         var allocated = allocations.Sum(a => a.Amount);
         if (allocated > dto.Amount)
@@ -395,7 +423,7 @@ public class IncomeService
         receipt.ReceivedDate = dto.Status == ReceiptStatus.Received ? dto.ReceivedDate : null;
         receipt.ExpectedDate = dto.ExpectedDate;
         receipt.Amount = dto.Amount;
-        receipt.Description = dto.Description.Trim();
+        receipt.Description = description;
         receipt.PaymentMethod = dto.PaymentMethod;
         receipt.CategoryId = dto.Kind == ReceiptKind.Other ? dto.CategoryId : null;
         if (isNew) receipt.ClientRequestId = dto.ClientRequestId;

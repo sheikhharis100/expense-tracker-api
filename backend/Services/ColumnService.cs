@@ -156,7 +156,7 @@ public class ColumnService
             UserId = userId,
             TableKey = ExpensesTable,
             Key = "pending",
-            Name = dto.Name.Trim(),
+            Name = InputRules.Clean(dto.Name),
             DataType = dto.Type,
             OptionsJson = JsonSerializer.Serialize(CleanOptions(dto.Options)),
             Formula = error.Canonical ?? string.Empty,
@@ -182,7 +182,7 @@ public class ColumnService
         if (check.Error != null) return ServiceResult<ColumnDto>.Fail(check.Error);
 
         if (dto.Version is uint v) _db.Entry(column).Property(c => c.Version).OriginalValue = v;
-        column.Name = dto.Name.Trim();
+        column.Name = InputRules.Clean(dto.Name);
         column.DataType = dto.Type;
         column.OptionsJson = JsonSerializer.Serialize(CleanOptions(dto.Options));
         column.Formula = check.Canonical ?? string.Empty;
@@ -201,14 +201,18 @@ public class ColumnService
     private async Task<(string? Error, string? Canonical)> ValidateAsync(int userId, ColumnInputDto dto, CustomColumn? existing)
     {
         var columns = await ColumnsAsync(userId);
-        var name = dto.Name.Trim();
+        var name = InputRules.Clean(dto.Name);
         if (name.Length == 0) return ("Give the column a name.", null);
-        if (columns.Any(c => c.Dto.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && c.Dto.Id != existing?.Id))
+        if (InputRules.Text(name, InputRules.ColumnNameLength, "Column name") is { } tooLong) return (tooLong, null);
+        // By key, not id: built-in columns have no id, just like a column that's being created.
+        if (columns.Any(c => c.Dto.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && c.Dto.Key != existing?.Key))
             return ($"There's already a column called “{name}”.", null);
         if (name.Contains('[') || name.Contains(']')) return ("Column names can't contain [ or ].", null);
-        if (dto.Type == "dropdown" && CleanOptions(dto.Options).Count == 0) return ("A dropdown needs at least one option.", null);
+        if (dto.Type == "dropdown" && OptionsError(dto.Options) is { } optionsError) return (optionsError, null);
         if (existing != null && existing.DataType == "formula" != (dto.Type == "formula"))
             return ("A calculated column can't be turned into a typed column (or back). Add a new column instead.", null);
+        if (existing != null && existing.DataType != dto.Type && await TypeChangeErrorAsync(userId, existing, dto) is { } typeError)
+            return (typeError, null);
 
         if (dto.Type != "formula") return (null, null);
         if (string.IsNullOrWhiteSpace(dto.Formula)) return ("Enter a formula, e.g. [Amount] * 0.1", null);
@@ -216,8 +220,39 @@ public class ColumnService
         return check.Ok ? (null, check.Canonical) : (check.Error, null);
     }
 
-    private static List<string> CleanOptions(IEnumerable<string> options) =>
-        options.Select(o => o.Trim()).Where(o => o.Length > 0 && o.Length <= 60).Distinct(StringComparer.OrdinalIgnoreCase).Take(100).ToList();
+    // Blank options are ignored; anything else must be short and appear once (ignoring case).
+    private static string? OptionsError(IEnumerable<string?> options)
+    {
+        var cleaned = options.Select(InputRules.Clean).Where(o => o.Length > 0).ToList();
+        if (cleaned.Count == 0) return "A dropdown needs at least one option.";
+        if (cleaned.FirstOrDefault(o => o.Length > InputRules.OptionLength) is { } longOption)
+            return $"Options can be at most {InputRules.OptionLength} characters (“{longOption[..20]}…”).";
+        var duplicate = cleaned.GroupBy(o => o, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+        return duplicate == null ? null : $"“{duplicate.Key}” is listed twice; each option must be different.";
+    }
+
+    // Values already saved must still make sense as the new type (text "abc" can't become a number).
+    private async Task<string?> TypeChangeErrorAsync(int userId, CustomColumn existing, ColumnInputDto dto)
+    {
+        var target = new CustomColumn
+        {
+            Name = InputRules.Clean(dto.Name),
+            DataType = dto.Type,
+            OptionsJson = JsonSerializer.Serialize(CleanOptions(dto.Options))
+        };
+        var rows = await _db.Transactions.AsNoTracking()
+            .Where(t => t.UserId == userId && EF.Functions.JsonExists(t.CustomValuesJson, existing.Key))
+            .Select(t => t.CustomValuesJson)
+            .ToListAsync();
+        var bad = rows.Select(json => CustomValues.Read(json).GetValueOrDefault(existing.Key))
+            .Count(value => CustomValues.Normalize(target, value).Error != null);
+        return bad == 0 ? null
+            : $"{bad} {(bad == 1 ? "entry has a value" : "entries have values")} that can't become {dto.Type}. Clear {(bad == 1 ? "it" : "them")} first, or add a new column.";
+    }
+
+    private static List<string> CleanOptions(IEnumerable<string?> options) =>
+        options.Select(InputRules.Clean).Where(o => o.Length > 0 && o.Length <= InputRules.OptionLength)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(100).ToList();
 
     // Removing a column never happens silently: with values or dependent formulas the caller must pick
     // archive (hide, keep values) or delete (remove values; dependent formulas show #REF!).

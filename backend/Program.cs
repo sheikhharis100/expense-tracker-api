@@ -23,7 +23,8 @@ if (!string.IsNullOrEmpty(port))
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = ExpenseTracker.Api.Controllers.InvalidInput.Response);
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
 
@@ -168,13 +169,17 @@ app.UseExceptionHandler(errorApp =>
     errorApp.Run(async context =>
     {
         var feature = context.Features.Get<IExceptionHandlerFeature>();
+        // A request the server couldn't read (too large, cut off) is the client's problem, not a 500.
+        var badRequest = feature?.Error as BadHttpRequestException ?? feature?.Error?.InnerException as BadHttpRequestException;
         context.Response.StatusCode = feature?.Error is UnauthorizedAccessException
             ? StatusCodes.Status401Unauthorized
-            : StatusCodes.Status500InternalServerError;
+            : badRequest?.StatusCode ?? StatusCodes.Status500InternalServerError;
         context.Response.ContentType = "application/json";
-        var message = app.Environment.IsDevelopment() && feature?.Error != null
-            ? feature.Error.Message
-            : "An unexpected error occurred.";
+        var message = badRequest != null
+            ? badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge ? "That upload is too large." : "The request couldn't be read."
+            : app.Environment.IsDevelopment() && feature?.Error != null
+                ? feature.Error.Message
+                : "An unexpected error occurred.";
         await context.Response.WriteAsJsonAsync(new { error = message });
     });
 });

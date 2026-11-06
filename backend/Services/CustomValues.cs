@@ -9,6 +9,10 @@ namespace ExpenseTracker.Api.Services;
 public static class CustomValues
 {
     public const int MaxTextLength = 500;
+    // Plain numbers (receipt no., quantity) aren't money, but stay below what a browser can hold exactly.
+    public const decimal MaxNumber = 999_999_999_999_999m;
+    // Custom dates can be older than the ledger (a warranty start, a birthday).
+    public const int MinDateYear = 1900;
 
     public static Dictionary<string, JsonElement> Read(string json)
     {
@@ -52,7 +56,7 @@ public static class CustomValues
 
             case "text":
             {
-                var text = raw.ValueKind == JsonValueKind.String ? raw.GetString()! : raw.GetRawText();
+                var text = InputRules.Clean(raw.ValueKind == JsonValueKind.String ? raw.GetString() : raw.GetRawText());
                 if (text.Length > MaxTextLength) return (null, $"“{column.Name}” is limited to {MaxTextLength} characters");
                 return text.Length == 0 ? (null, null) : (Element(text), null);
             }
@@ -63,15 +67,17 @@ public static class CustomValues
                 if (!TryNumber(raw, out var number)) return (null, $"“{column.Name}” needs a number");
                 if (column.DataType == "money" && !Money.HasValidScale(number))
                     return (null, $"“{column.Name}” allows at most 2 decimals");
-                if (Math.Abs(number) > Money.Max) return (null, $"“{column.Name}” is too large");
+                if (Math.Abs(number) > (column.DataType == "money" ? Money.Max : MaxNumber)) return (null, $"“{column.Name}” is too large");
                 return (Element(number), null);
             }
 
             case "date":
             {
-                var text = raw.ValueKind == JsonValueKind.String ? raw.GetString()! : string.Empty;
+                var text = raw.ValueKind == JsonValueKind.String ? raw.GetString()!.Trim() : string.Empty;
                 if (!DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
                     return (null, $"“{column.Name}” needs a date like 2026-11-05");
+                if (date.Year is < MinDateYear or > InputRules.MaxYear)
+                    return (null, $"“{column.Name}” must be between {MinDateYear} and {InputRules.MaxYear}");
                 return (Element(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), null);
             }
 

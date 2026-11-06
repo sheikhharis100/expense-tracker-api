@@ -7,6 +7,7 @@ import { parseAmounts } from '../lib/amounts';
 import { useSeriesColor } from '../lib/colors';
 import { lastDayOf, monthOfIso, useToday } from '../lib/dates';
 import { money } from '../lib/format';
+import { checkDate, firstError, MAX_DATE, MIN_DATE } from '../lib/validate';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 import { toast } from './Toast';
@@ -94,10 +95,13 @@ function QuickAddSheet({
   const selected = spending.find((c) => c.id === categoryId) ?? spending[0];
   const isFuture = date > today;
   const status: TxStatus = isFuture || plannedChoice ? 'Planned' : 'Paid';
+  // Shown as you type; an empty amount only complains on save.
+  const amountError = amount.trim() ? firstError(parseAmounts(amount)) : null;
+  const dateError = firstError(checkDate(date));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selected) return;
+    if (!selected || amountError || dateError) return;
     const parsed = parseAmounts(amount);
     if (!parsed.ok || parsed.amounts.length === 0) {
       setError(parsed.ok ? 'Enter an amount' : parsed.error);
@@ -154,10 +158,15 @@ function QuickAddSheet({
               setAmount(e.target.value);
               requestIds.current = [];
             }}
-            aria-invalid={error ? true : undefined}
+            aria-invalid={error || amountError ? true : undefined}
+            aria-describedby="quick-amount-hint"
             autoComplete="off"
           />
-          <small className="muted">Tip: 100+50 saves two entries.</small>
+          {amountError ? (
+            <small id="quick-amount-hint" className="error-text">{amountError}</small>
+          ) : (
+            <small id="quick-amount-hint" className="muted">Tip: 100+50 saves two entries.</small>
+          )}
         </label>
 
         <div className="chips" role="radiogroup" aria-label="Category">
@@ -180,7 +189,15 @@ function QuickAddSheet({
         <div className="quick-row">
           <label className="field">
             <span>Date</span>
-            <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            <input
+              type="date"
+              value={date}
+              min={MIN_DATE}
+              max={MAX_DATE}
+              aria-invalid={dateError ? true : undefined}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+            />
+            {dateError && <small className="error-text">{dateError}</small>}
           </label>
           <label className="field">
             <span>Paid with</span>
@@ -209,7 +226,7 @@ function QuickAddSheet({
         </div>
 
         {error && <p className="error-text" role="alert">{error}</p>}
-        <button className="btn btn-primary btn-block btn-lg" disabled={!selected || create.isPending}>
+        <button className="btn btn-primary btn-block btn-lg" disabled={!selected || create.isPending || !!amountError || !!dateError}>
           {create.isPending ? 'Saving…' : status === 'Planned' ? `Plan for ${selected?.name ?? ''}` : `Save to ${selected?.name ?? ''}`}
         </button>
       </form>

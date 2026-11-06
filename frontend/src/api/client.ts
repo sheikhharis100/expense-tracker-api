@@ -71,13 +71,19 @@ export class NetworkError extends Error {
   }
 }
 
-// The API answers { error, current? }, plain text, or ProblemDetails for validation errors.
-async function readError(res: Response): Promise<{ message: string; detail?: unknown }> {
+// The API answers { error, current? }, plain text, or ProblemDetails for validation errors (which also carry
+// `error`: the first problem in plain words).
+export async function readError(res: Response): Promise<{ message: string; detail?: unknown }> {
   const text = await res.text();
-  if (!text) return { message: res.status === 401 ? 'Please sign in again.' : `Request failed (${res.status})` };
+  if (!text) {
+    if (res.status === 401) return { message: 'Please sign in again.' };
+    if (res.status === 413) return { message: 'That upload is too large.' };
+    return { message: `Request failed (${res.status})` };
+  }
   try {
     const body = JSON.parse(text);
     if (typeof body === 'string') return { message: body };
+    if (typeof body?.error === 'string' && body.error) return { message: body.error, detail: body.current };
     if (body?.errors) {
       const first = Object.values(body.errors as Record<string, string[]>).flat()[0];
       if (first) return { message: first };

@@ -20,7 +20,12 @@ public abstract class AppController : ControllerBase
             _ => BadRequest(new { error = result.Error })
         };
 
-    protected ActionResult BadMonth() => BadRequest(new { error = "Month must look like 2026-11" });
+    protected ActionResult BadMonth() =>
+        BadRequest(new { error = $"Month must look like 2026-11, between {InputRules.MinYear} and {InputRules.MaxYear}" });
+
+    protected static bool IsValidYear(int year) => year is >= InputRules.MinYear and <= InputRules.MaxYear;
+
+    protected ActionResult BadYear() => Error($"Year must be between {InputRules.MinYear} and {InputRules.MaxYear}");
 
     protected ActionResult Error(string message) => BadRequest(new { error = message });
 }

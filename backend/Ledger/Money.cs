@@ -4,7 +4,9 @@ namespace ExpenseTracker.Api.Ledger;
 public static class Money
 {
     public const int Decimals = 2;
-    public const decimal Max = 9_999_999_999_999.99m;
+    // Largest single amount (an entry, a payment, a budget). Far above any real personal amount, and many of them
+    // still add up well inside numeric(18,2).
+    public const decimal Max = 999_999_999.99m;
 
     public static decimal Round(decimal value) => Math.Round(value, Decimals, MidpointRounding.AwayFromZero);
 

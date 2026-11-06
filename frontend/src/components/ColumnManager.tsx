@@ -4,6 +4,7 @@ import { ApiError } from '../api/client';
 import type { Column, ColumnType, Layout, LayoutColumn } from '../api/types';
 import { ymLabel } from '../lib/dates';
 import { moveItem } from '../lib/reorder';
+import { checkName, checkOptions, firstError, LIMITS } from '../lib/validate';
 import { useDragReorder } from './Drag';
 import { Icon } from './Icon';
 import { ScopeChoice, Sheet } from './Sheet';
@@ -157,14 +158,29 @@ function ColumnDialog({ column, columns, onClose }: { column: Column | null; col
     return () => window.clearTimeout(t);
   }, [formula, type, column?.id]);
 
+  // The server's rules, checked as you type: a unique name (built-in columns count too), real options, a formula.
+  const nameCheck = checkName(name, LIMITS.columnName, columns.filter((c) => c.key !== column?.key).map((c) => c.name), 'column');
+  const optionList = options.split(',');
+  const optionsCheck = type === 'dropdown' ? checkOptions(optionList) : null;
+  const problem = firstError(
+    nameCheck,
+    /[[\]]/.test(name) && "Column names can't contain [ or ]",
+    optionsCheck,
+    type === 'formula' && !formula.trim() && 'Enter a formula, e.g. [Amount] * 0.1',
+    !Number.isInteger(decimals) || decimals < 0 || decimals > 6 ? 'Decimals must be between 0 and 6' : null,
+  );
+  const nameError = name.trim() || column ? firstError(nameCheck, /[[\]]/.test(name) && "Column names can't contain [ or ]") : null;
+  const optionsError = optionsCheck && options.trim() ? firstError(optionsCheck) : null;
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (problem) return setError(problem);
     try {
       await save.mutateAsync({
         id: column?.id,
-        name,
+        name: nameCheck.ok ? nameCheck.value : name,
         type,
-        options: options.split(',').map((o) => o.trim()).filter(Boolean),
+        options: optionsCheck?.ok ? optionsCheck.value : optionList.map((o) => o.trim()).filter(Boolean),
         formula: type === 'formula' ? formula : null,
         decimals,
         version: column?.version,
@@ -196,7 +212,14 @@ function ColumnDialog({ column, columns, onClose }: { column: Column | null; col
       <form className="form-stack" onSubmit={submit}>
         <label className="field">
           <span>Name</span>
-          <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="e.g. Shop, Receipt no., Tip" />
+          <input
+            value={name}
+            maxLength={LIMITS.columnName}
+            aria-invalid={nameError ? true : undefined}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Shop, Receipt no., Tip"
+          />
+          {nameError && <small className="error-text">{nameError}</small>}
         </label>
         <label className="field">
           <span>Type</span>
@@ -211,7 +234,8 @@ function ColumnDialog({ column, columns, onClose }: { column: Column | null; col
         {type === 'dropdown' && (
           <label className="field">
             <span>Options (comma-separated)</span>
-            <input value={options} onChange={(e) => setOptions(e.target.value)} placeholder="Daraz, Imtiaz, Local shop" />
+            <input value={options} aria-invalid={optionsError ? true : undefined} onChange={(e) => setOptions(e.target.value)} placeholder="Daraz, Imtiaz, Local shop" />
+            {optionsError && <small className="error-text">{optionsError}</small>}
           </label>
         )}
         {(type === 'number' || type === 'formula') && (
@@ -255,7 +279,7 @@ function ColumnDialog({ column, columns, onClose }: { column: Column | null; col
             </button>
           )}
           <span className="spacer" />
-          <button className="btn btn-primary" disabled={save.isPending || (type === 'formula' && check?.ok === false)}>
+          <button className="btn btn-primary" disabled={save.isPending || !!problem || (type === 'formula' && check?.ok === false)} title={problem ?? undefined}>
             {column ? 'Save' : 'Add column'}
           </button>
         </div>

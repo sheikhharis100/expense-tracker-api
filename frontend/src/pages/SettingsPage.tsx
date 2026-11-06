@@ -18,10 +18,10 @@ import { useColumnEditor, useMoveCategory } from '../components/ColumnEditor';
 import { Icon } from '../components/Icon';
 import { toast } from '../components/Toast';
 import { useCalendar } from '../components/Workspace';
-import { parseAmounts } from '../lib/amounts';
 import { useSeriesColor } from '../lib/colors';
 import { shiftKey, ymLabel, ymLongLabel } from '../lib/dates';
 import { money } from '../lib/format';
+import { checkAmount, checkImportFile, checkMonth, checkName, firstError, LIMITS, MAX_MONTH, MIN_MONTH } from '../lib/validate';
 
 export function SettingsPage() {
   const me = useMe();
@@ -147,16 +147,22 @@ function SalaryPlans({ me }: { me: Me }) {
     setError(null);
   };
 
+  // Zero is allowed (unpaid leave); negatives, text and over-precise amounts aren't.
+  const baseCheck = checkAmount(base, { allowZero: true });
+  const allowancesCheck = checkAmount(allowances, { allowZero: true, sum: true, required: false });
+  const baseError = base.trim() ? firstError(baseCheck) : null;
+  const allowancesError = firstError(allowancesCheck);
+  const monthError = firstError(checkMonth(month, 'Earned from'));
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const b = parseAmounts(base);
-    const a = allowances.trim() ? parseAmounts(allowances) : { ok: true as const, amounts: [0] };
-    if (!b.ok || b.amounts.length !== 1 || !a.ok) return toast('Enter the salary as a number, e.g. 55000', 'error');
+    const problem = firstError(monthError, baseCheck, allowancesCheck);
+    if (problem || !baseCheck.ok || !allowancesCheck.ok) return setError(problem);
     // Saving over a month that already has a plan replaces it, so send the version it's based on.
     const version = editing?.effectiveFrom === month ? editing.version : plans.data?.find((p) => p.effectiveFrom === month)?.version;
     setError(null);
     save.mutate(
-      { effectiveFrom: month, baseSalary: b.amounts[0], allowances: a.amounts[0] ?? 0, note, version },
+      { effectiveFrom: month, baseSalary: baseCheck.value ?? 0, allowances: allowancesCheck.value ?? 0, note, version },
       {
         onSuccess: () => (reset(), toast(`Salary plan from ${ymLongLabel(month)} saved`, 'success')),
         onError: (err) => err instanceof ApiError && err.status === 409 && setError(`${err.message} The list now shows the latest; press Edit to start again.`),
@@ -216,21 +222,24 @@ function SalaryPlans({ me }: { me: Me }) {
       <form className="inline-form" onSubmit={submit}>
         <label className="field">
           <span>Earned from</span>
-          <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+          <input type="month" value={month} min={MIN_MONTH} max={MAX_MONTH} aria-invalid={monthError ? true : undefined} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+          {monthError && <small className="error-text">{monthError}</small>}
         </label>
         <label className="field">
           <span>Base salary</span>
-          <input inputMode="decimal" placeholder="55000" value={base} onChange={(e) => setBase(e.target.value)} />
+          <input inputMode="decimal" placeholder="55000" value={base} aria-invalid={baseError ? true : undefined} onChange={(e) => setBase(e.target.value)} />
+          {baseError && <small className="error-text">{baseError}</small>}
         </label>
         <label className="field">
           <span>Allowances</span>
-          <input inputMode="decimal" placeholder="0" value={allowances} onChange={(e) => setAllowances(e.target.value)} />
+          <input inputMode="decimal" placeholder="0" value={allowances} aria-invalid={allowancesError ? true : undefined} onChange={(e) => setAllowances(e.target.value)} />
+          {allowancesError && <small className="error-text">{allowancesError}</small>}
         </label>
         <label className="field">
           <span>Note</span>
-          <input placeholder="e.g. raise" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} />
+          <input placeholder="e.g. raise" value={note} maxLength={LIMITS.planNote} onChange={(e) => setNote(e.target.value)} />
         </label>
-        <button className="btn btn-primary" disabled={save.isPending}>
+        <button className="btn btn-primary" disabled={save.isPending || !base.trim() || !!baseError || !!allowancesError || !!monthError}>
           {editing ? 'Update plan' : 'Save plan'}
         </button>
         {editing && (
@@ -313,6 +322,9 @@ function AccountsCard() {
   const me = useMe();
   const [name, setName] = useState('');
   const [type, setType] = useState('Wallet');
+  const nameCheck = checkName(name, LIMITS.name, (accounts.data ?? []).map((a) => a.name), 'account');
+  // Blank just keeps Add switched off; a taken name says so.
+  const nameError = name.trim() ? firstError(nameCheck) : null;
   return (
     <section className="card" id="accounts">
       <div className="card-head">
@@ -333,13 +345,14 @@ function AccountsCard() {
         className="inline-form"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!name.trim()) return;
-          save.mutate({ name: name.trim(), type, currency: me.data?.currency ?? 'PKR', openingBalance: 0 }, { onSuccess: () => setName('') });
+          if (!nameCheck.ok) return;
+          save.mutate({ name: nameCheck.value, type, currency: me.data?.currency ?? 'PKR', openingBalance: 0 }, { onSuccess: () => setName('') });
         }}
       >
         <label className="field">
           <span>New account</span>
-          <input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="e.g. Meezan Bank" />
+          <input value={name} maxLength={LIMITS.name} aria-invalid={nameError ? true : undefined} onChange={(e) => setName(e.target.value)} placeholder="e.g. Meezan Bank" />
+          {nameError && <small className="error-text">{nameError}</small>}
         </label>
         <label className="field">
           <span>Type</span>
@@ -349,7 +362,7 @@ function AccountsCard() {
             ))}
           </select>
         </label>
-        <button className="btn" disabled={!name.trim() || save.isPending}>
+        <button className="btn" disabled={!nameCheck.ok || save.isPending}>
           Add
         </button>
       </form>
@@ -361,6 +374,8 @@ function ImportCard() {
   const importSheet = useImportSheet();
   const [result, setResult] = useState<SheetImportResult | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  // Wrong type or too big is caught before uploading; the server checks again.
+  const fileError = file ? firstError(checkImportFile(file)) : null;
   return (
     <section className="card" id="import">
       <div className="card-head">
@@ -376,14 +391,19 @@ function ImportCard() {
         className="inline-form"
         onSubmit={(e) => {
           e.preventDefault();
-          if (file) importSheet.mutate(file, { onSuccess: setResult });
+          if (file && !fileError) importSheet.mutate(file, { onSuccess: setResult });
         }}
       >
-        <input type="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        <button className="btn btn-primary" disabled={!file || importSheet.isPending}>
+        <input type="file" accept=".csv,text/csv" aria-invalid={fileError ? true : undefined} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <button className="btn btn-primary" disabled={!file || !!fileError || importSheet.isPending}>
           {importSheet.isPending ? 'Importing…' : 'Import'}
         </button>
       </form>
+      {fileError && (
+        <p className="error-text" role="alert">
+          {fileError}
+        </p>
+      )}
       {result && (
         <div className="import-result">
           <p>

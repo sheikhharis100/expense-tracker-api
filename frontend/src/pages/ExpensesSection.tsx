@@ -16,6 +16,7 @@ import { useSeriesColor } from '../lib/colors';
 import { dayLabel, ymLabel } from '../lib/dates';
 import { moveItem } from '../lib/reorder';
 import { money } from '../lib/format';
+import { checkCustomValue, checkDate, checkText, firstError, LIMITS, MAX_DATE } from '../lib/validate';
 
 const VIEW_KEY = 'expense-tracker.expense-view';
 
@@ -87,7 +88,12 @@ function LedgerView({ fixed }: { fixed?: Partial<ExpenseFilter> }) {
   const [showFilters, setShowFilters] = useState(false);
   const [editing, setEditing] = useState<ExpenseRow | 'new' | null>(null);
   const [managing, setManaging] = useState(false);
-  const list = useExpenses(ym, { ...filter, ...fixed });
+  // Bad or reversed dates aren't sent (the server would refuse them); the field says why instead.
+  const fromError = filter.from ? firstError(checkDate(filter.from, { label: 'From' })) : null;
+  const toError = filter.to
+    ? firstError(checkDate(filter.to, { label: 'To', min: fromError ? undefined : filter.from, minMessage: 'To is before From' }))
+    : null;
+  const list = useExpenses(ym, { ...filter, from: fromError ? undefined : filter.from, to: toError ? undefined : filter.to, ...fixed });
   const d = list.data;
 
   const set = (patch: Partial<ExpenseFilter>) => setFilter((f) => ({ ...f, ...patch }));
@@ -99,7 +105,7 @@ function LedgerView({ fixed }: { fixed?: Partial<ExpenseFilter> }) {
         <label className="search">
           <Icon name="target" size={14} />
           <span className="sr-only">Search</span>
-          <input type="search" placeholder="Search entries" value={filter.search ?? ''} onChange={(e) => set({ search: e.target.value })} />
+          <input type="search" placeholder="Search entries" maxLength={200} value={filter.search ?? ''} onChange={(e) => set({ search: e.target.value })} />
         </label>
         <button type="button" className={`btn btn-sm ${showFilters ? 'on' : ''}`} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
           <Icon name="sliders" size={14} /> Filters
@@ -141,11 +147,27 @@ function LedgerView({ fixed }: { fixed?: Partial<ExpenseFilter> }) {
           </label>
           <label className="field">
             <span>From</span>
-            <input type="date" value={filter.from ?? ''} min={`${ym}-01`} onChange={(e) => set({ from: e.target.value || undefined })} />
+            <input
+              type="date"
+              value={filter.from ?? ''}
+              min={`${ym}-01`}
+              max={MAX_DATE}
+              aria-invalid={fromError ? true : undefined}
+              onChange={(e) => set({ from: e.target.value || undefined })}
+            />
+            {fromError && <small className="error-text">{fromError}</small>}
           </label>
           <label className="field">
             <span>To</span>
-            <input type="date" value={filter.to ?? ''} min={`${ym}-01`} onChange={(e) => set({ to: e.target.value || undefined })} />
+            <input
+              type="date"
+              value={filter.to ?? ''}
+              min={filter.from ?? `${ym}-01`}
+              max={MAX_DATE}
+              aria-invalid={toError ? true : undefined}
+              onChange={(e) => set({ to: e.target.value || undefined })}
+            />
+            {toError && <small className="error-text">{toError}</small>}
           </label>
           <label className="field">
             <span>Status</span>
@@ -345,7 +367,7 @@ function LedgerCell({ row, column }: { row: ExpenseRow; column: Column }) {
           <EditCell
             display={row.description}
             edit={row.description}
-            parse={(t) => ({ ok: true, value: t.trim() })}
+            parse={(t) => checkText(t, LIMITS.description, 'Description')}
             isSame={(t) => t === row.description}
             onCommit={(description) => save({ ...base, description })}
             label="Description"
@@ -405,8 +427,8 @@ function LedgerCell({ row, column }: { row: ExpenseRow; column: Column }) {
       <EditCell
         display={formatCustom(column, value)}
         edit={value == null ? '' : String(value)}
-        parse={(t) => ({ ok: true, value: t.trim() === '' ? null : t.trim() })}
-        isSame={(t) => (t ?? '') === (value == null ? '' : String(value))}
+        parse={(t) => checkCustomValue(column, t)}
+        isSame={(t) => String(t ?? '') === (value == null ? '' : String(value))}
         onCommit={(v) => save({ ...base, custom: { [column.key]: v } })}
         label={column.name}
         align={numeric ? 'right' : 'left'}
@@ -643,7 +665,7 @@ function MatrixTable({
                   <EditCell
                     display={day.note}
                     edit={day.note}
-                    parse={(t) => ({ ok: true, value: t.trim() })}
+                    parse={(t) => checkText(t, LIMITS.note, 'Remarks')}
                     isSame={(t) => t === day.note}
                     onCommit={(text) => setNote.mutate({ date: day.date, text })}
                     cellId={`${r}:${visible.length}`}
