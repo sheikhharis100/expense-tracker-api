@@ -4,13 +4,14 @@ namespace ExpenseTracker.Api.DTOs;
 
 public class AccountCreateDto
 {
-    [Required, StringLength(100, MinimumLength = 1)]
+    [Required(ErrorMessage = "Give the account a name."), StringLength(100, ErrorMessage = "Account names can be at most 100 characters.")]
     public string Name { get; set; } = string.Empty;
 
-    [Required, RegularExpression("Cash|Wallet|Checking|Savings|CreditCard")]
+    [Required(ErrorMessage = "Choose an account type."),
+     RegularExpression("Cash|Wallet|Checking|Savings|CreditCard", ErrorMessage = "Account type must be Cash, Wallet, Checking, Savings or CreditCard.")]
     public string Type { get; set; } = string.Empty;
 
-    [Required, StringLength(3, MinimumLength = 3)]
+    [Required(ErrorMessage = "Choose a currency."), StringLength(3, MinimumLength = 3, ErrorMessage = "Currency must be a 3-letter code like PKR.")]
     public string Currency { get; set; } = string.Empty;
 
     public decimal OpeningBalance { get; set; }
@@ -18,13 +19,14 @@ public class AccountCreateDto
 
 public class AccountUpdateDto
 {
-    [Required, StringLength(100, MinimumLength = 1)]
+    [Required(ErrorMessage = "Give the account a name."), StringLength(100, ErrorMessage = "Account names can be at most 100 characters.")]
     public string Name { get; set; } = string.Empty;
 
-    [Required, RegularExpression("Cash|Wallet|Checking|Savings|CreditCard")]
+    [Required(ErrorMessage = "Choose an account type."),
+     RegularExpression("Cash|Wallet|Checking|Savings|CreditCard", ErrorMessage = "Account type must be Cash, Wallet, Checking, Savings or CreditCard.")]
     public string Type { get; set; } = string.Empty;
 
-    [Required, StringLength(3, MinimumLength = 3)]
+    [Required(ErrorMessage = "Choose a currency."), StringLength(3, MinimumLength = 3, ErrorMessage = "Currency must be a 3-letter code like PKR.")]
     public string Currency { get; set; } = string.Empty;
 
     public decimal OpeningBalance { get; set; }
@@ -42,31 +44,33 @@ public class AccountResponseDto
 
 public class CategoryCreateDto
 {
-    [Required, StringLength(100, MinimumLength = 1)]
+    [Required(ErrorMessage = "Give the category a name."), StringLength(100, ErrorMessage = "Category names can be at most 100 characters.")]
     public string Name { get; set; } = string.Empty;
 
-    [Required, RegularExpression("Income|Expense")]
+    [Required(ErrorMessage = "Choose spending or income."),
+     RegularExpression("Income|Expense", ErrorMessage = "Type must be Income or Expense.")]
     public string Type { get; set; } = string.Empty;
 
-    [RegularExpression("^#[0-9a-fA-F]{6}$")]
+    [RegularExpression("^#[0-9a-fA-F]{6}$", ErrorMessage = "Colour must look like #2a78d6.")]
     public string? Color { get; set; }
 
-    [StringLength(50)]
+    [StringLength(50, ErrorMessage = "Group names can be at most 50 characters.")]
     public string? GroupName { get; set; }
 }
 
 public class CategoryUpdateDto
 {
-    [Required, StringLength(100, MinimumLength = 1)]
+    [Required(ErrorMessage = "Give the category a name."), StringLength(100, ErrorMessage = "Category names can be at most 100 characters.")]
     public string Name { get; set; } = string.Empty;
 
-    [Required, RegularExpression("Income|Expense")]
+    [Required(ErrorMessage = "Choose spending or income."),
+     RegularExpression("Income|Expense", ErrorMessage = "Type must be Income or Expense.")]
     public string Type { get; set; } = string.Empty;
 
-    [RegularExpression("^#[0-9a-fA-F]{6}$")]
+    [RegularExpression("^#[0-9a-fA-F]{6}$", ErrorMessage = "Colour must look like #2a78d6.")]
     public string? Color { get; set; }
 
-    [StringLength(50)]
+    [StringLength(50, ErrorMessage = "Group names can be at most 50 characters.")]
     public string? GroupName { get; set; }
 
     public bool IsArchived { get; set; }
@@ -77,7 +81,7 @@ public class CategoryUpdateDto
 
 public class CategoryReorderDto
 {
-    [Required, MinLength(1)]
+    [Required(ErrorMessage = "List the categories in their new order."), MinLength(1, ErrorMessage = "List the categories in their new order.")]
     public List<int> OrderedIds { get; set; } = new();
 }
 

@@ -14,28 +14,29 @@ namespace ExpenseTracker.Api.Controllers;
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly CurrencyConverter _fx;
 
-    public AccountsController(AppDbContext context)
+    public AccountsController(AppDbContext context, CurrencyConverter fx)
     {
         _context = context;
+        _fx = fx;
     }
 
     [HttpPost]
     public async Task<ActionResult<AccountResponseDto>> CreateAccount(AccountCreateDto dto)
     {
         var userId = AuthHelper.GetCurrentUserId(User);
-
-        var nameTaken = await _context.Accounts
-            .AnyAsync(a => a.UserId == userId && a.Name.ToLower() == dto.Name.ToLower());
-        if (nameTaken)
-            return BadRequest("An account with this name already exists");
+        var name = InputRules.Clean(dto.Name);
+        var currency = dto.Currency.Trim().ToUpperInvariant();
+        if (await ValidateAsync(userId, null, name, currency, dto.OpeningBalance) is { } error)
+            return Error(error);
 
         var account = new Account
         {
             UserId = userId,
-            Name = dto.Name,
+            Name = name,
             Type = dto.Type,
-            Currency = dto.Currency,
+            Currency = currency,
             OpeningBalance = dto.OpeningBalance
         };
 
@@ -87,14 +88,14 @@ public class AccountsController : ControllerBase
         if (account == null)
             return NotFound();
 
-        var nameTaken = await _context.Accounts
-            .AnyAsync(a => a.UserId == userId && a.Id != id && a.Name.ToLower() == dto.Name.ToLower());
-        if (nameTaken)
-            return BadRequest("An account with this name already exists");
+        var name = InputRules.Clean(dto.Name);
+        var currency = dto.Currency.Trim().ToUpperInvariant();
+        if (await ValidateAsync(userId, id, name, currency, dto.OpeningBalance) is { } error)
+            return Error(error);
 
-        account.Name = dto.Name;
+        account.Name = name;
         account.Type = dto.Type;
-        account.Currency = dto.Currency;
+        account.Currency = currency;
         account.OpeningBalance = dto.OpeningBalance;
 
         await _context.SaveChangesAsync();
@@ -114,13 +115,27 @@ public class AccountsController : ControllerBase
 
         if (account.Transactions.Any() || await _context.Transactions.AnyAsync(t => t.TransferAccountId == id))
         {
-            return BadRequest("Cannot delete account with existing transactions. Delete transactions first.");
+            return Error("Cannot delete account with existing transactions. Delete transactions first.");
         }
 
         _context.Accounts.Remove(account);
         await _context.SaveChangesAsync();
         return NoContent();
     }
+
+    // Name required and unique (ignoring case), a supported currency, and an opening balance that fits.
+    private async Task<string?> ValidateAsync(int userId, int? id, string name, string currency, decimal openingBalance)
+    {
+        if (InputRules.Name(name, InputRules.NameLength) is { } nameError) return nameError;
+        if (!_fx.SupportedCurrencies.Contains(currency))
+            return $"Currency must be one of: {string.Join(", ", _fx.SupportedCurrencies)}.";
+        if (InputRules.Signed(openingBalance, "Opening balance") is { } balanceError) return balanceError;
+        var taken = await _context.Accounts
+            .AnyAsync(a => a.UserId == userId && a.Id != id && a.Name.ToLower() == name.ToLower());
+        return taken ? $"There's already an account called “{name}”." : null;
+    }
+
+    private BadRequestObjectResult Error(string message) => BadRequest(new { error = message });
 
     private static AccountResponseDto MapToResponse(Account account)
     {

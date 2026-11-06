@@ -112,18 +112,18 @@ public class ExpenseInputDto
     public DateOnly Date { get; set; }
     public decimal Amount { get; set; }
 
-    [RegularExpression("Expense|Refund|Transfer")]
+    [RegularExpression("Expense|Refund|Transfer", ErrorMessage = "Type must be Expense, Refund or Transfer.")]
     public string Kind { get; set; } = "Expense";
 
-    [RegularExpression("Paid|Planned")]
+    [RegularExpression("Paid|Planned", ErrorMessage = "Status must be Paid or Planned.")]
     public string Status { get; set; } = "Paid";
 
     public int? CategoryId { get; set; }
 
-    [StringLength(500)]
+    [StringLength(500, ErrorMessage = "Description can be at most 500 characters.")]
     public string Description { get; set; } = string.Empty;
 
-    [StringLength(40)]
+    [StringLength(40, ErrorMessage = "Payment method can be at most 40 characters.")]
     public string PaymentMethod { get; set; } = string.Empty;
 
     public bool IsAdditional { get; set; }
@@ -141,15 +141,15 @@ public class ExpensePatchDto
     public DateOnly? Date { get; set; }
     public decimal? Amount { get; set; }
 
-    [RegularExpression("Paid|Planned")]
+    [RegularExpression("Paid|Planned", ErrorMessage = "Status must be Paid or Planned.")]
     public string? Status { get; set; }
 
     public int? CategoryId { get; set; }
 
-    [StringLength(500)]
+    [StringLength(500, ErrorMessage = "Description can be at most 500 characters.")]
     public string? Description { get; set; }
 
-    [StringLength(40)]
+    [StringLength(40, ErrorMessage = "Payment method can be at most 40 characters.")]
     public string? PaymentMethod { get; set; }
 
     public bool? IsAdditional { get; set; }
@@ -168,7 +168,7 @@ public class RefundInputDto
     public DateOnly Date { get; set; }
     public decimal Amount { get; set; }
 
-    [StringLength(500)]
+    [StringLength(500, ErrorMessage = "Description can be at most 500 characters.")]
     public string Description { get; set; } = string.Empty;
 }
 
@@ -301,7 +301,7 @@ public class DayNoteUpdateDto
 {
     public DateOnly Date { get; set; }
 
-    [StringLength(1000)]
+    [StringLength(1000, ErrorMessage = "Remarks can be at most 1000 characters.")]
     public string Text { get; set; } = string.Empty;
 }
 
@@ -327,19 +327,20 @@ public class ColumnDto
 
 public class ColumnInputDto
 {
-    [Required, StringLength(60, MinimumLength = 1)]
+    [Required(ErrorMessage = "Give the column a name."), StringLength(60, ErrorMessage = "Column names can be at most 60 characters.")]
     public string Name { get; set; } = string.Empty;
 
-    [Required, RegularExpression("text|money|number|date|dropdown|checkbox|formula")]
+    [Required(ErrorMessage = "Choose a column type."),
+     RegularExpression("text|money|number|date|dropdown|checkbox|formula", ErrorMessage = "Column type must be text, money, number, date, dropdown, checkbox or formula.")]
     public string Type { get; set; } = "text";
 
-    [MaxLength(100)]
+    [MaxLength(100, ErrorMessage = "A dropdown can have at most 100 options.")]
     public List<string> Options { get; set; } = new();
 
-    [StringLength(1000)]
+    [StringLength(1000, ErrorMessage = "Formulas can be at most 1000 characters.")]
     public string? Formula { get; set; }
 
-    [Range(0, 6)]
+    [Range(0, 6, ErrorMessage = "Decimals must be between 0 and 6.")]
     public int Decimals { get; set; } = 2;
 
     public uint? Version { get; set; }
@@ -347,7 +348,7 @@ public class ColumnInputDto
 
 public class FormulaCheckDto
 {
-    [StringLength(1000)]
+    [StringLength(1000, ErrorMessage = "Formulas can be at most 1000 characters.")]
     public string Formula { get; set; } = string.Empty;
     public int? ColumnId { get; set; }
 }
@@ -370,10 +371,10 @@ public class ColumnRemovalImpactDto
 
 public class LayoutColumnDto
 {
-    [Required, StringLength(40)]
+    [Required(ErrorMessage = "Each column needs its key."), StringLength(40, ErrorMessage = "Column keys can be at most 40 characters.")]
     public string Key { get; set; } = string.Empty;
 
-    [Range(40, 800)]
+    [Range(40, 800, ErrorMessage = "Column widths must be between 40 and 800 pixels.")]
     public int? Width { get; set; }
 
     public bool Hidden { get; set; }
@@ -391,10 +392,11 @@ public class LayoutDto
 public class LayoutUpdateDto
 {
     // month: this month only; future: this month and every later month (replaces later month-only layouts).
-    [Required, RegularExpression("month|future")]
+    [Required(ErrorMessage = "Choose this month or this and future months."),
+     RegularExpression("month|future", ErrorMessage = "Scope must be month or future.")]
     public string Scope { get; set; } = "month";
 
-    [MaxLength(200)]
+    [MaxLength(200, ErrorMessage = "A layout can have at most 200 columns.")]
     public List<LayoutColumnDto> Columns { get; set; } = new();
 }
 
@@ -428,7 +430,8 @@ public class BudgetSetDto
 {
     public decimal? Amount { get; set; }
 
-    [Required, RegularExpression("month|future")]
+    [Required(ErrorMessage = "Choose this month or this and future months."),
+     RegularExpression("month|future", ErrorMessage = "Scope must be month or future.")]
     public string Scope { get; set; } = "month";
 }
 
@@ -453,19 +456,19 @@ public class RecurringItemDto
 
 public class RecurringInputDto
 {
-    [RegularExpression("Expense|Income")]
+    [RegularExpression("Expense|Income", ErrorMessage = "Kind must be Expense or Income.")]
     public string Kind { get; set; } = "Expense";
 
-    [Required, StringLength(200, MinimumLength = 1)]
+    [Required(ErrorMessage = "Give it a name, e.g. Rent."), StringLength(200, ErrorMessage = "Names can be at most 200 characters.")]
     public string Description { get; set; } = string.Empty;
 
     public int? CategoryId { get; set; }
     public decimal Amount { get; set; }
 
-    [Range(1, 31)]
+    [Range(1, 31, ErrorMessage = "Day of month must be between 1 and 31.")]
     public int DayOfMonth { get; set; } = 1;
 
-    [StringLength(40)]
+    [StringLength(40, ErrorMessage = "Payment method can be at most 40 characters.")]
     public string PaymentMethod { get; set; } = string.Empty;
 
     public YearMonth Start { get; set; }
@@ -506,7 +509,7 @@ public class OccurrenceUpdateDto
     public decimal Amount { get; set; }
     public DateOnly DueDate { get; set; }
 
-    [StringLength(500)]
+    [StringLength(500, ErrorMessage = "Notes can be at most 500 characters.")]
     public string Note { get; set; } = string.Empty;
 }
 
@@ -535,7 +538,7 @@ public class SalaryPlanInputDto
     public decimal BaseSalary { get; set; }
     public decimal Allowances { get; set; }
 
-    [StringLength(200)]
+    [StringLength(200, ErrorMessage = "Notes can be at most 200 characters.")]
     public string Note { get; set; } = string.Empty;
 
     // Omitted: the plan for that month is overwritten whatever its version.
@@ -544,10 +547,11 @@ public class SalaryPlanInputDto
 
 public class SalaryComponentDto
 {
-    [Required, RegularExpression("Base|Allowance|Bonus|Overtime|Arrears|Deduction|Adjustment")]
+    [Required(ErrorMessage = "Choose a type for each salary line."),
+     RegularExpression("Base|Allowance|Bonus|Overtime|Arrears|Deduction|Adjustment", ErrorMessage = "Salary lines must be Base, Allowance, Bonus, Overtime, Arrears, Deduction or Adjustment.")]
     public string Kind { get; set; } = "Base";
 
-    [StringLength(100)]
+    [StringLength(100, ErrorMessage = "Labels can be at most 100 characters.")]
     public string Label { get; set; } = string.Empty;
 
     public decimal Amount { get; set; }
@@ -557,10 +561,10 @@ public class SalaryStatementInputDto
 {
     public YearMonth Funded { get; set; }
 
-    [StringLength(500)]
+    [StringLength(500, ErrorMessage = "Notes can be at most 500 characters.")]
     public string Note { get; set; } = string.Empty;
 
-    [MaxLength(50)]
+    [MaxLength(50, ErrorMessage = "A salary can have at most 50 lines.")]
     public List<SalaryComponentDto> Components { get; set; } = new();
 
     public uint? Version { get; set; }
@@ -595,26 +599,26 @@ public class ReceiptInputDto
 {
     public Guid? ClientRequestId { get; set; }
 
-    [RegularExpression("Salary|Other")]
+    [RegularExpression("Salary|Other", ErrorMessage = "Kind must be Salary or Other.")]
     public string Kind { get; set; } = "Other";
 
     public int? CategoryId { get; set; }
 
-    [RegularExpression("Received|Expected")]
+    [RegularExpression("Received|Expected", ErrorMessage = "Status must be Received or Expected.")]
     public string Status { get; set; } = "Received";
 
     public DateOnly? ReceivedDate { get; set; }
     public DateOnly? ExpectedDate { get; set; }
     public decimal Amount { get; set; }
 
-    [StringLength(500)]
+    [StringLength(500, ErrorMessage = "Description can be at most 500 characters.")]
     public string Description { get; set; } = string.Empty;
 
-    [StringLength(40)]
+    [StringLength(40, ErrorMessage = "Payment method can be at most 40 characters.")]
     public string PaymentMethod { get; set; } = string.Empty;
 
     // Omitted: the whole amount goes to the default month (the salary's funded month, or the given month).
-    [MaxLength(24)]
+    [MaxLength(24, ErrorMessage = "Split across at most 24 months.")]
     public List<AllocationDto>? Allocations { get; set; }
 
     public YearMonth? DefaultMonth { get; set; }
@@ -674,7 +678,7 @@ public class MonthSettingInputDto
     public decimal? OpeningBalance { get; set; }
     public decimal ReservedSavings { get; set; }
 
-    [StringLength(1000)]
+    [StringLength(1000, ErrorMessage = "Notes can be at most 1000 characters.")]
     public string Note { get; set; } = string.Empty;
 
     public uint? Version { get; set; }

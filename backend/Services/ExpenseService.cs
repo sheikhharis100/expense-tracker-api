@@ -88,6 +88,21 @@ public class ExpenseService
         };
     }
 
+    private static readonly string[] Sorts = { "date", "amount", "category", "description", "status", "method" };
+
+    // Unknown filter values would quietly show nothing (or the wrong order), so they're refused instead.
+    public static string? FilterError(ExpenseFilterDto f)
+    {
+        if (!string.IsNullOrEmpty(f.Status) && f.Status is not (TxStatus.Paid or TxStatus.Planned)) return "status must be Paid or Planned.";
+        if (!string.IsNullOrEmpty(f.Kind) && !TxKind.Editable.Contains(f.Kind)) return "kind must be Expense, Refund or Transfer.";
+        if (!string.IsNullOrEmpty(f.Sort) && !Sorts.Contains(f.Sort.ToLowerInvariant())) return $"sort must be one of: {string.Join(", ", Sorts)}.";
+        if (!string.IsNullOrEmpty(f.Dir) && f.Dir.ToLowerInvariant() is not ("asc" or "desc")) return "dir must be asc or desc.";
+        if (f.Search?.Length > InputRules.SearchLength) return $"search can be at most {InputRules.SearchLength} characters.";
+        if ((InputRules.Date(f.From, "from") ?? InputRules.Date(f.To, "to")) is { } date) return date;
+        if (f.From > f.To) return "from must be on or before to.";
+        return null;
+    }
+
     private static bool HasFilter(ExpenseFilterDto f) =>
         !string.IsNullOrWhiteSpace(f.Search) || f.CategoryId.HasValue || f.From.HasValue || f.To.HasValue
         || !string.IsNullOrEmpty(f.Status) || !string.IsNullOrEmpty(f.Kind) || f.Additional.HasValue || !string.IsNullOrEmpty(f.PaymentMethod);
@@ -335,20 +350,19 @@ public class ExpenseService
     {
         var today = LocalCalendar.Today(_clock, user.TimeZone);
 
-        if (!Money.IsValidAmount(dto.Amount)) return "Amount must be greater than zero with at most 2 decimals.";
-        if (dto.Date == default) return "Date is required.";
-        if (dto.Date.Year is < 2000 or > 3000) return "Date is out of range.";
+        var problem = InputRules.Amount(dto.Amount) ?? InputRules.Date(dto.Date) ?? InputRules.PaymentMethod(dto.PaymentMethod);
+        if (problem != null) return problem;
         if (!isNew && t.Kind != dto.Kind) return "An entry's type can't be changed; delete it and add a new one.";
         if (dto.Status == TxStatus.Paid && dto.Date > today)
             return $"A paid entry can't be dated after today ({today:dd MMM yyyy}). Mark it planned instead.";
-        if (dto.PaymentMethod.Length > 0 && !PaymentMethods.All.Contains(dto.PaymentMethod))
-            return $"Payment method must be one of: {string.Join(", ", PaymentMethods.All)}.";
+        var description = InputRules.Clean(dto.Description);
+        if (InputRules.Text(description, InputRules.DescriptionLength, "Description") is { } tooLong) return tooLong;
 
         Account account;
         if (dto.AccountId is int accountId)
         {
             var chosen = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId && a.UserId == user.Id);
-            if (chosen == null) return "Invalid account.";
+            if (chosen == null) return "Choose one of your accounts.";
             account = chosen;
         }
         else
@@ -360,7 +374,7 @@ public class ExpenseService
         t.Status = dto.Status;
         t.TransactionDate = dto.Date.ToDateTime(TimeOnly.MinValue);
         t.Amount = dto.Amount;
-        t.Description = dto.Description.Trim();
+        t.Description = description;
         t.PaymentMethod = dto.PaymentMethod;
         t.AccountId = account.Id;
 
@@ -399,7 +413,7 @@ public class ExpenseService
             {
                 if (dto.TransferAccountId is not int toId) return "Choose the account the money moved to.";
                 if (toId == account.Id) return "A transfer needs two different accounts.";
-                if (!await _db.Accounts.AnyAsync(a => a.Id == toId && a.UserId == user.Id)) return "Invalid destination account.";
+                if (!await _db.Accounts.AnyAsync(a => a.Id == toId && a.UserId == user.Id)) return "Choose one of your accounts to move the money to.";
                 t.TransferAccountId = toId;
                 t.CategoryId = null;
                 t.IsAdditional = false;
@@ -496,10 +510,13 @@ public class ExpenseService
         return dto;
     }
 
-    public async Task SetNoteAsync(int userId, DateOnly date, string text)
+    public async Task<string?> SetNoteAsync(int userId, DateOnly date, string text)
     {
+        var trimmed = InputRules.Clean(text);
+        var problem = InputRules.Date(date) ?? InputRules.Text(trimmed, InputRules.NoteLength, "Remarks");
+        if (problem != null) return problem;
+
         var note = await _db.DayNotes.FirstOrDefaultAsync(n => n.UserId == userId && n.Date == date);
-        var trimmed = text.Trim();
         if (trimmed.Length == 0)
         {
             if (note != null) _db.DayNotes.Remove(note);
@@ -513,5 +530,6 @@ public class ExpenseService
             note.Text = trimmed;
         }
         await _db.SaveChangesAsync();
+        return null;
     }
 }

@@ -86,7 +86,7 @@ public static class SheetCsvParser
                 if (IsBlank(raw))
                     continue;
 
-                if (!TryParseAmount(raw, out var total) || total < 0)
+                if (!TryParseAmount(raw, out var total) || total < 0 || (total > 0 && InputRules.Amount(total) != null))
                 {
                     result.CellsSkipped++;
                     result.Warnings.Add($"{date:dd MMM yyyy} · {name}: couldn't read \"{raw}\"");
@@ -157,7 +157,7 @@ public static class SheetCsvParser
             if (!match.Success
                 || !TryParseMonthName(match.Groups["month"].Value, out var payMonthNumber)
                 || !TryParseAmount(match.Groups["amount"].Value, out var amount)
-                || amount <= 0)
+                || InputRules.Amount(amount) != null)
                 continue;
 
             // "Oct pay" inside the November section is the most recent October at or before November.
@@ -185,7 +185,7 @@ public static class SheetCsvParser
             var amounts = new List<decimal>();
             foreach (var part in piece[(colon + 1)..].Split('+'))
             {
-                if (!TryParseAmount(part, out var amount) || amount <= 0)
+                if (!TryParseAmount(part, out var amount) || InputRules.Amount(amount) != null)
                 {
                     amounts.Clear();
                     break;
