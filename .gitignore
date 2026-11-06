@@ -4,3 +4,6 @@ obj/
 *.log
 .vs/
 .claude/
+node_modules/
+frontend/dist/
+backend/wwwroot/

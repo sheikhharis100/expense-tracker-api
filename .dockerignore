@@ -1,7 +1,10 @@
-bin/
-obj/
-Tests/
+**/bin/
+**/obj/
+**/node_modules/
+frontend/dist/
+backend/Tests/
 .git/
-.gitignore
-*.log
 .vs/
+.vscode/
+.config/
+*.log

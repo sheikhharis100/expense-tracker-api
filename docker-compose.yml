@@ -1,0 +1,16 @@
+# Local database for development: docker compose up -d db
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: expense-tracker-db
+    environment:
+      POSTGRES_USER: expense
+      POSTGRES_PASSWORD: expense
+      POSTGRES_DB: expensetracker
+    ports:
+      - "5433:5432"
+    volumes:
+      - expense-tracker-db:/var/lib/postgresql/data
+
+volumes:
+  expense-tracker-db:
