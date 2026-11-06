@@ -157,7 +157,7 @@ export const useLayout = (table: 'expenses' | 'daily', ym: Ym) =>
 // ---------- Income ----------
 
 export const useSavePlan = () =>
-  useWrite((v: { effectiveFrom: Ym; baseSalary: number; allowances: number; note: string }) =>
+  useWrite((v: { effectiveFrom: Ym; baseSalary: number; allowances: number; note: string; version?: number }) =>
     api<SalaryPlan>('/api/income/plans', { method: 'PUT', body: v }),
   );
 

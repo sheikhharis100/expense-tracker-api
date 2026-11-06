@@ -1,3 +1,5 @@
+import { trackRequest } from './slowRequests';
+
 const TOKEN_KEY = 'expense-tracker.token';
 
 // Identifies this tab. The API echoes it on live updates so a tab can skip refreshing for its own edits.
@@ -48,6 +50,13 @@ export class ApiError extends Error {
   }
 }
 
+// The request never got an answer (no signal, connection dropped). Not an ApiError, so queries still retry it.
+export class NetworkError extends Error {
+  constructor(cause?: unknown) {
+    super("Can't reach the server. Check your connection.", { cause });
+  }
+}
+
 // The API answers { error, current? }, plain text, or ProblemDetails for validation errors.
 async function readError(res: Response): Promise<{ message: string; detail?: unknown }> {
   const text = await res.text();
@@ -73,22 +82,32 @@ export async function api<T>(path: string, { method = 'GET', body, form, auth = 
   if (auth && token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(path, {
-    method,
-    headers,
-    body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
-  });
+  const done = trackRequest();
+  try {
+    let res: Response;
+    try {
+      res = await fetch(path, {
+        method,
+        headers,
+        body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
+      });
+    } catch (err) {
+      throw new NetworkError(err);
+    }
 
-  if (res.status === 401 && auth) {
-    setToken(null);
-    throw new ApiError('Your session has ended. Please sign in again.', 401);
-  }
-  if (!res.ok) {
-    const { message, detail } = await readError(res);
-    throw new ApiError(message, res.status, detail);
-  }
-  if (res.status === 204) return undefined as T;
+    if (res.status === 401 && auth) {
+      setToken(null);
+      throw new ApiError('Your session has ended. Please sign in again.', 401);
+    }
+    if (!res.ok) {
+      const { message, detail } = await readError(res);
+      throw new ApiError(message, res.status, detail);
+    }
+    if (res.status === 204) return undefined as T;
 
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  } finally {
+    done();
+  }
 }

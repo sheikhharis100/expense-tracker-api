@@ -11,7 +11,8 @@ import {
   useSavePlan,
   useUpdateMe,
 } from '../api/hooks';
-import type { Category, CategoryType, Me, SheetImportResult } from '../api/types';
+import { ApiError } from '../api/client';
+import type { Category, CategoryType, Me, SalaryPlan, SheetImportResult } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useColumnEditor, useMoveCategory } from '../components/ColumnEditor';
 import { Icon } from '../components/Icon';
@@ -125,15 +126,41 @@ function SalaryPlans({ me }: { me: Me }) {
   const [base, setBase] = useState('');
   const [allowances, setAllowances] = useState('');
   const [note, setNote] = useState('');
+  // The plan being edited, as it was when Edit was pressed, so a change from another device isn't silently overwritten.
+  const [editing, setEditing] = useState<SalaryPlan | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const edit = (p: SalaryPlan) => {
+    setEditing(p);
+    setMonth(p.effectiveFrom);
+    setBase(String(p.baseSalary));
+    setAllowances(p.allowances ? String(p.allowances) : '');
+    setNote(p.note);
+    setError(null);
+  };
+
+  const reset = () => {
+    setEditing(null);
+    setBase('');
+    setAllowances('');
+    setNote('');
+    setError(null);
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const b = parseAmounts(base);
     const a = allowances.trim() ? parseAmounts(allowances) : { ok: true as const, amounts: [0] };
     if (!b.ok || b.amounts.length !== 1 || !a.ok) return toast('Enter the salary as a number, e.g. 55000', 'error');
+    // Saving over a month that already has a plan replaces it, so send the version it's based on.
+    const version = editing?.effectiveFrom === month ? editing.version : plans.data?.find((p) => p.effectiveFrom === month)?.version;
+    setError(null);
     save.mutate(
-      { effectiveFrom: month, baseSalary: b.amounts[0], allowances: a.amounts[0] ?? 0, note },
-      { onSuccess: () => (setBase(''), setAllowances(''), setNote(''), toast(`Salary plan from ${ymLongLabel(month)} saved`, 'success')) },
+      { effectiveFrom: month, baseSalary: b.amounts[0], allowances: a.amounts[0] ?? 0, note, version },
+      {
+        onSuccess: () => (reset(), toast(`Salary plan from ${ymLongLabel(month)} saved`, 'success')),
+        onError: (err) => err instanceof ApiError && err.status === 409 && setError(`${err.message} The list now shows the latest; press Edit to start again.`),
+      },
     );
   };
 
@@ -167,6 +194,9 @@ function SalaryPlans({ me }: { me: Me }) {
                 <td className="calc">{ymLabel(shiftKey(p.effectiveFrom, me.salaryLagMonths))} on</td>
                 <td className="muted">{p.note}</td>
                 <td className="actions">
+                  <button type="button" className="btn-ghost" onClick={() => edit(p)}>
+                    <Icon name="pencil" size={13} /> Edit
+                  </button>
                   <button type="button" className="btn-ghost" onClick={() => confirm(`Delete the plan from ${ymLabel(p.effectiveFrom)}?`) && remove.mutate(p.id)}>
                     Delete
                   </button>
@@ -201,9 +231,19 @@ function SalaryPlans({ me }: { me: Me }) {
           <input placeholder="e.g. raise" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} />
         </label>
         <button className="btn btn-primary" disabled={save.isPending}>
-          Save plan
+          {editing ? 'Update plan' : 'Save plan'}
         </button>
+        {editing && (
+          <button type="button" className="btn" onClick={reset}>
+            Cancel
+          </button>
+        )}
       </form>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

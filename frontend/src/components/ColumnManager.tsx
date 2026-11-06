@@ -3,6 +3,8 @@ import { checkFormula, useRemoveColumn, useRestoreColumn, useSaveColumn, useSave
 import { ApiError } from '../api/client';
 import type { Column, ColumnType, Layout, LayoutColumn } from '../api/types';
 import { ymLabel } from '../lib/dates';
+import { moveItem } from '../lib/reorder';
+import { useDragReorder } from './Drag';
 import { Icon } from './Icon';
 import { ScopeChoice, Sheet } from './Sheet';
 import { toast } from './Toast';
@@ -36,6 +38,8 @@ export function ColumnManager({ ym, columns, layout, onClose }: { ym: string; co
     setRows(next);
   };
 
+  const drag = useDragReorder((from, to) => setRows((list) => moveItem(list, from, to)));
+
   const save = () =>
     saveLayout.mutate(
       { table: 'expenses', ym, scope, columns: rows },
@@ -51,13 +55,14 @@ export function ColumnManager({ ym, columns, layout, onClose }: { ym: string; co
           Showing the {layout.source === 'month' ? `layout saved for ${ymLabel(ym)} only` : layout.source === 'template' ? `layout in use since ${ymLabel(layout.sourceMonth ?? ym)}` : 'default layout'}.
           Date, Category, Amount and Type can be hidden but always stay in the records.
         </p>
-        <ul className="column-list">
+        <ul className="column-list" ref={drag.listRef}>
           {rows.map((r, i) => {
             const c = byKey.get(r.key);
             if (!c) return null;
             return (
-              <li key={r.key} className={r.hidden ? 'archived' : ''}>
+              <li key={r.key} data-index={i} className={`${r.hidden ? 'archived' : ''} ${drag.dragging === i ? 'is-dragged' : ''}`}>
                 <div className="column-order">
+                  {drag.grip(i, c.name)}
                   <button type="button" className="btn-ghost" aria-label={`Move ${c.name} up`} disabled={i === 0} onClick={() => move(i, -1)}>
                     ↑
                   </button>

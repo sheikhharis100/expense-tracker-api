@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useMatch } from 'react-router-dom';
-import { newRequestId, useCategories, useCreateExpense, useMe } from '../api/hooks';
+import { newRequestId, useCategories, useMe } from '../api/hooks';
+import { queuedMessage, useCreateOrQueue } from '../api/offline';
 import type { TxStatus } from '../api/types';
 import { parseAmounts } from '../lib/amounts';
 import { useSeriesColor } from '../lib/colors';
@@ -64,7 +65,7 @@ function QuickAddSheet({
   const me = useMe();
   const today = useToday(me.data?.timeZone ?? 'Asia/Karachi');
   const categories = useCategories();
-  const create = useCreateExpense();
+  const create = useCreateOrQueue();
   const color = useSeriesColor();
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -103,22 +104,28 @@ function QuickAddSheet({
     setError(null);
     while (requestIds.current.length < parsed.amounts.length) requestIds.current.push(newRequestId());
     try {
+      let queued = 0;
       for (const [i, value] of parsed.amounts.entries()) {
-        await create.mutateAsync({
+        const input = {
           clientRequestId: requestIds.current[i],
           date,
           amount: value,
-          kind: 'Expense',
+          kind: 'Expense' as const,
           status,
           categoryId: selected.id,
           description,
           paymentMethod: method,
           isAdditional: additional,
-        });
+        };
+        // Once one couldn't reach the server, keep the rest on the phone too rather than waiting on each.
+        if (queued) create.queue(input);
+        else if ((await create.save(input)) === 'saved') continue;
+        queued++;
       }
       remember(LAST_CATEGORY_KEY, String(selected.id));
       remember(LAST_METHOD_KEY, method);
-      toast(`${status === 'Planned' ? 'Planned' : 'Saved'} ${money(parsed.amounts.reduce((a, b) => a + b, 0))} · ${selected.name}`, 'success');
+      if (queued) toast(queuedMessage(), 'info');
+      else toast(`${status === 'Planned' ? 'Planned' : 'Saved'} ${money(parsed.amounts.reduce((a, b) => a + b, 0))} · ${selected.name}`, 'success');
       requestIds.current = [];
       setAmount('');
       setDescription('');

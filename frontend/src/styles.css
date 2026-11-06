@@ -2494,6 +2494,264 @@ tfoot .sticky-col {
   text-align: center;
 }
 
+/* ---------- Waking server, offline queue ---------- */
+
+.wake-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--warning-wash);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.wake-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--warning);
+  border-right-color: transparent;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--warning-wash);
+  color: var(--warning);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sync-badge-failed {
+  background: var(--critical-wash);
+  color: var(--critical-ink);
+}
+
+.sync-short {
+  display: none;
+}
+
+.sync-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sync-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--grid);
+  flex-wrap: wrap;
+}
+
+.sync-item-main {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sync-item-failed .sync-item-title {
+  color: var(--critical-ink);
+}
+
+/* ---------- Edit conflicts ---------- */
+
+.conflict-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.conflict-table th,
+.conflict-table td {
+  padding: 5px 8px 5px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+.conflict-table thead th {
+  font-size: 12px;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conflict-table tbody th {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* ---------- Drag to resize / reorder ---------- */
+
+body.is-resizing,
+body.is-reordering {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.is-reordering {
+  cursor: grabbing;
+}
+
+th.resizable {
+  position: relative;
+}
+
+/* Sits inside the header's right edge; a thin line shows on hover and while dragging. */
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.col-resize::after {
+  content: '';
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  right: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--axis);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+th:hover > .col-resize::after,
+.col-resize-active::after {
+  opacity: 1;
+}
+
+.col-resize-active::after {
+  top: 0;
+  bottom: 0;
+  background: var(--brand);
+}
+
+body.is-resizing,
+body.is-resizing .col-resize {
+  cursor: col-resize;
+}
+
+.col-resize-value {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: var(--ink);
+  color: var(--page);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.drag-grip {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-height: 32px;
+  border-radius: 8px;
+  color: var(--ink-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-grip:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.column-list li.is-dragged {
+  position: relative;
+  z-index: 1;
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+
+.column-list li.is-dragged .drag-grip {
+  cursor: grabbing;
+  color: var(--brand-ink);
+}
+
+@media (pointer: coarse) {
+  .col-resize {
+    width: 18px;
+  }
+
+  .col-resize::after {
+    opacity: 0.6;
+  }
+}
+
+@media (max-width: 720px) {
+  .sync-long {
+    display: none;
+  }
+
+  .sync-short {
+    display: inline;
+  }
+
+  .sync-badge {
+    padding: 0 9px;
+  }
+
+  .wake-banner {
+    justify-content: flex-start;
+    text-align: left;
+    padding: 6px 12px;
+  }
+}
+
+/* Narrow phones: make room for the sync badge by dropping the nav icons while it shows. */
+@media (max-width: 420px) {
+  .topbar-inner:has(.sync-badge) .nav-icon {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wake-spinner {
+    animation: none;
+  }
+}
+
 /* ---------- Toasts ---------- */
 
 .toaster {

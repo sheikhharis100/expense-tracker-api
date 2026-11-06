@@ -4,7 +4,6 @@ import {
   useAccounts,
   useCategories,
   useColumns,
-  useCreateExpense,
   useDeleteExpense,
   useDuplicateExpense,
   useMe,
@@ -12,8 +11,10 @@ import {
   useUpdateExpense,
 } from '../api/hooks';
 import { ApiError } from '../api/client';
-import type { Column, ExpenseRow, TxKind, TxStatus } from '../api/types';
+import { queuedMessage, useCreateOrQueue } from '../api/offline';
+import type { Category, Column, ExpenseRow, TxKind, TxStatus } from '../api/types';
 import { parseAmounts } from '../lib/amounts';
+import { entryDiffs, isExpenseRow, type EntryDraft } from '../lib/conflict';
 import { useToday } from '../lib/dates';
 import { money } from '../lib/format';
 import { Icon } from './Icon';
@@ -35,7 +36,7 @@ export function EntrySheet({
   const categories = useCategories();
   const accounts = useAccounts();
   const columns = useColumns();
-  const create = useCreateExpense();
+  const create = useCreateOrQueue();
   const update = useUpdateExpense();
   const remove = useDeleteExpense();
   const duplicate = useDuplicateExpense();
@@ -57,11 +58,17 @@ export function EntrySheet({
   const [error, setError] = useState<string | null>(null);
   const [requestId] = useState(newRequestId);
   const [refunding, setRefunding] = useState(false);
+  // The server's copy when another device saved this entry first; the form keeps what was typed until the user picks.
+  const [conflict, setConflict] = useState<ExpenseRow | null>(null);
 
   const effectiveStatus: TxStatus = kind === 'Refund' ? 'Paid' : date > today ? 'Planned' : status;
 
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
+    void save(row?.version);
+  };
+
+  const save = async (version?: number) => {
     const parsed = parseAmounts(amount);
     if (!parsed.ok || parsed.amounts.length !== 1) return setError(parsed.ok ? 'Enter one amount' : parsed.error);
     const input = {
@@ -79,12 +86,20 @@ export function EntrySheet({
       custom: values,
     };
     try {
-      if (row) await update.mutateAsync({ ...input, id: row.id, version: row.version });
-      else await create.mutateAsync({ ...input, clientRequestId: requestId });
+      if (row) await update.mutateAsync({ ...input, id: row.id, version });
+      else if ((await create.save({ ...input, clientRequestId: requestId })) === 'queued') {
+        toast(queuedMessage(), 'info');
+        return onClose();
+      }
       toast('Saved', 'success');
       onClose();
     } catch (err) {
-      // Entered values stay put; a conflict explains that someone else changed it first.
+      // Entered values stay put; a conflict shows what the other device saved and lets the user choose.
+      if (row && err instanceof ApiError && err.status === 409 && isExpenseRow(err.detail)) {
+        setError(null);
+        setConflict(err.detail);
+        return;
+      }
       setError(err instanceof ApiError && err.status === 409 ? `${err.message} Close and reopen to see it.` : err instanceof Error ? err.message : 'Could not save');
     }
   };
@@ -204,6 +219,16 @@ export function EntrySheet({
 
         {row?.isRecurring && <p className="muted small">Created from a recurring item. Deleting it puts that occurrence back to planned.</p>}
         {error && <p className="error-text" role="alert">{error}</p>}
+        {conflict && (
+          <ConflictPanel
+            current={conflict}
+            mine={{ amount, date, categoryId: kind === 'Transfer' ? null : categoryId, description, status: effectiveStatus, method, additional: kind === 'Expense' && additional }}
+            categories={categories.data ?? []}
+            saving={update.isPending}
+            onKeepMine={() => void save(conflict.version)}
+            onUseTheirs={onClose}
+          />
+        )}
 
         <div className="form-actions">
           {row && (
@@ -228,12 +253,70 @@ export function EntrySheet({
             </>
           )}
           <span className="spacer" />
-          <button className="btn btn-primary" disabled={create.isPending || update.isPending}>
+          {/* While a conflict is open the choice is made in the panel, so Enter can't silently resubmit the old version. */}
+          <button className="btn btn-primary" disabled={create.isPending || update.isPending || !!conflict}>
             {create.isPending || update.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>
       </form>
     </Sheet>
+  );
+}
+
+function ConflictPanel({
+  current,
+  mine,
+  categories,
+  saving,
+  onKeepMine,
+  onUseTheirs,
+}: {
+  current: ExpenseRow;
+  mine: EntryDraft;
+  categories: Category[];
+  saving: boolean;
+  onKeepMine: () => void;
+  onUseTheirs: () => void;
+}) {
+  const diffs = entryDiffs(current, mine, categories);
+  return (
+    <div className="warning-box conflict-box" role="alert">
+      <p>
+        <b>This entry was changed on another device</b> while you were editing it.
+      </p>
+      {diffs.length > 0 ? (
+        <table className="conflict-table">
+          <thead>
+            <tr>
+              <th scope="col">
+                <span className="sr-only">Field</span>
+              </th>
+              <th scope="col">Yours</th>
+              <th scope="col">Other device</th>
+            </tr>
+          </thead>
+          <tbody>
+            {diffs.map((d) => (
+              <tr key={d.label}>
+                <th scope="row">{d.label}</th>
+                <td>{d.mine}</td>
+                <td>{d.theirs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="muted small">These fields match; something else (such as a custom field or the account) was changed.</p>
+      )}
+      <div className="btn-row">
+        <button type="button" className="btn btn-primary" disabled={saving} onClick={onKeepMine}>
+          {saving ? 'Saving…' : 'Keep my changes'}
+        </button>
+        <button type="button" className="btn" disabled={saving} onClick={onUseTheirs}>
+          Use the other version
+        </button>
+      </div>
+    </div>
   );
 }
 

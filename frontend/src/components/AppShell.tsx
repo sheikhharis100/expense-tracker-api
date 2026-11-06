@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useMatch } from 'react-router-dom';
 import { useLive } from '../live/LiveProvider';
 import { ColumnEditorProvider } from './ColumnEditor';
 import { Icon } from './Icon';
+import { SyncBadge, SyncSheet, useOfflineSync, WakingBanner } from './OfflineSync';
 import { QuickAddProvider } from './QuickAdd';
 import { useCalendar } from './Workspace';
 
@@ -34,6 +35,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const monthMatch = useMatch('/m/:ym/*');
   const yearMatch = useMatch('/year/:year');
   const viewedYear = monthMatch?.params.ym?.slice(0, 4) ?? yearMatch?.params.year ?? currentMonth.slice(0, 4);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const closeSync = useCallback(() => setSyncOpen(false), []);
+  useOfflineSync();
 
   return (
     <ColumnEditorProvider>
@@ -59,10 +63,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                   Settings
                 </NavLink>
               </nav>
+              <SyncBadge onOpen={() => setSyncOpen(true)} />
               <LiveBadge />
             </div>
+            <WakingBanner />
           </header>
           <main className="main">{children}</main>
+          {/* Outside the header: its backdrop blur would trap the fixed-position sheet. */}
+          {syncOpen && <SyncSheet onClose={closeSync} />}
         </div>
       </QuickAddProvider>
     </ColumnEditorProvider>

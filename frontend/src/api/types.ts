@@ -441,6 +441,7 @@ export interface SalaryPlan {
   baseSalary: number;
   allowances: number;
   note: string;
+  version: number;
 }
 
 // ---------- Budgets, recurring, settings ----------
@@ -537,6 +538,7 @@ export interface Category {
   groupName: string | null;
   isArchived: boolean;
   transactionCount: number;
+  version: number;
 }
 
 export interface CategoryInput {
@@ -545,6 +547,8 @@ export interface CategoryInput {
   color?: string | null;
   groupName?: string | null;
   isArchived?: boolean;
+  // The version the edit started from; a stale one gets 409.
+  version?: number;
 }
 
 export interface Account {

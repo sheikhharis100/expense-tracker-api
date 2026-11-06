@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { newRequestId, useCategories, useCreateExpense, useDeleteExpense, useExpenses, useMatrix, usePatchExpense, useSaveLayout, useSetNote } from '../api/hooks';
 import type { Column, ExpenseFilter, ExpenseList, ExpenseRow, LedgerTotals, Matrix, MatrixCell, MatrixDay } from '../api/types';
 import { ColumnHeader } from '../components/ColumnEditor';
 import { ColumnManager } from '../components/ColumnManager';
+import { ResizeHandle, useDragReorder } from '../components/Drag';
 import { EditCell } from '../components/EditCell';
 import { EntrySheet } from '../components/EntrySheet';
 import { Icon } from '../components/Icon';
@@ -13,6 +14,7 @@ import { SectionTitle, useWorkspace } from '../components/Workspace';
 import { parseAmounts, toExpression } from '../lib/amounts';
 import { useSeriesColor } from '../lib/colors';
 import { dayLabel, ymLabel } from '../lib/dates';
+import { moveItem } from '../lib/reorder';
 import { money } from '../lib/format';
 
 const VIEW_KEY = 'expense-tracker.expense-view';
@@ -219,19 +221,55 @@ function visibleColumns(d: ExpenseList): { column: Column; width?: number | null
   return d.layout.columns.filter((l) => !l.hidden && byKey.has(l.key)).map((l) => ({ column: byKey.get(l.key)!, width: l.width }));
 }
 
+// A width dragged in a header shows at once and stays until the saved layout comes back (or the save fails).
+function useDraggedWidths<K extends string | number>(resetWhen: unknown) {
+  const [widths, setWidths] = useState<Partial<Record<K, number>>>({});
+  useEffect(() => setWidths({}), [resetWhen]);
+  const set = (key: K, width: number) => setWidths((w) => ({ ...w, [key]: width }));
+  const drop = (key: K) =>
+    setWidths((w) => {
+      const next = { ...w };
+      delete next[key];
+      return next;
+    });
+  return { widths, set, drop };
+}
+
 function LedgerTable({ d, onOpen }: { d: ExpenseList; onOpen: (r: ExpenseRow) => void }) {
   const cols = visibleColumns(d);
+  const saveLayout = useSaveLayout();
+  const dragged = useDraggedWidths<string>(d.layout);
+
+  const resize = (key: string, width: number) => {
+    dragged.set(key, width);
+    saveLayout.mutate(
+      {
+        table: 'expenses',
+        ym: d.month,
+        scope: d.layout.source === 'month' ? 'month' : 'future',
+        // Include widths dragged a moment ago whose save hasn't come back yet.
+        columns: d.layout.columns.map((l) => ({ ...l, width: l.key === key ? width : (dragged.widths[l.key] ?? l.width) })),
+      },
+      { onSuccess: () => toast('Column width saved', 'success'), onError: () => dragged.drop(key) },
+    );
+  };
+
   return (
     <div className="table-scroll ledger-scroll hide-sm">
       <table className="data-table ledger-table">
         <thead>
           <tr>
-            {cols.map(({ column, width }) => (
-              <th key={column.key} scope="col" style={width ? { width, minWidth: width } : undefined} className={column.type === 'money' || column.type === 'number' || column.type === 'formula' ? 'num' : ''}>
-                {column.name}
-                {column.type === 'formula' && <span className="muted small"> ƒ</span>}
-              </th>
-            ))}
+            {cols.map(({ column, width: saved }) => {
+              const width = dragged.widths[column.key] ?? saved;
+              const numeric = column.type === 'money' || column.type === 'number' || column.type === 'formula';
+              return (
+                <th key={column.key} scope="col" style={width ? { width, minWidth: width } : undefined} className={`resizable ${numeric ? 'num' : ''}`}>
+                  {column.name}
+                  {column.type === 'formula' && <span className="muted small"> ƒ</span>}
+                  <ResizeHandle name={column.name} onCommit={(w) => resize(column.key, w)} />
+                </th>
+              );
+            })}
             <th scope="col">
               <span className="sr-only">Actions</span>
             </th>
@@ -492,6 +530,21 @@ function MatrixTable({
   const remove = useDeleteExpense();
   const setNote = useSetNote();
   const quick = useQuickAdd();
+  const saveLayout = useSaveLayout();
+  const dragged = useDraggedWidths<number>(m.categories);
+
+  const resize = (id: number, width: number) => {
+    dragged.set(id, width);
+    saveLayout.mutate(
+      {
+        table: 'daily',
+        ym: m.month,
+        scope: m.layoutSource === 'month' ? 'month' : 'future',
+        columns: m.categories.map((c) => ({ key: `cat:${c.id}`, hidden: c.hidden, width: c.id === id ? width : (dragged.widths[c.id] ?? c.width) })),
+      },
+      { onSuccess: () => toast('Column width saved', 'success'), onError: () => dragged.drop(id) },
+    );
+  };
 
   const commitCell = async (day: MatrixDay, categoryId: number, cell: MatrixCell | undefined, amounts: number[]) => {
     const status = day.date > m.today ? 'Planned' : 'Paid';
@@ -521,11 +574,20 @@ function MatrixTable({
         <thead>
           <tr>
             <th scope="col" className="sticky-col">Date</th>
-            {visible.map((c) => (
-              <th key={c.id} scope="col" className="num col-th" style={{ ['--col' as string]: color(c.color), ...(c.width ? { minWidth: c.width } : {}) }}>
-                <ColumnHeader id={c.id} name={c.name} swatch={color(c.color)} />
-              </th>
-            ))}
+            {visible.map((c) => {
+              const drag = dragged.widths[c.id];
+              return (
+                <th
+                  key={c.id}
+                  scope="col"
+                  className="num col-th resizable"
+                  style={{ ['--col' as string]: color(c.color), ...(drag ? { width: drag, minWidth: drag } : c.width ? { minWidth: c.width } : {}) }}
+                >
+                  <ColumnHeader id={c.id} name={c.name} swatch={color(c.color)} />
+                  <ResizeHandle name={c.name} onCommit={(w) => resize(c.id, w)} />
+                </th>
+              );
+            })}
             <th scope="col" className="num">Daily total</th>
             <th scope="col" className="remarks-col">Remarks</th>
           </tr>
@@ -664,14 +726,16 @@ function DailyLayoutSheet({ m, onClose }: { m: Matrix; onClose: () => void }) {
     [next[i], next[j]] = [next[j], next[i]];
     setRows(next);
   };
+  const drag = useDragReorder((from, to) => setRows((list) => moveItem(list, from, to)));
   return (
     <Sheet title="Daily log columns" onClose={onClose}>
       <div className="form-stack">
         <p className="muted small">Hiding a column only hides it here; its entries and totals stay. Rename or archive categories by clicking a column header.</p>
-        <ul className="column-list">
+        <ul className="column-list" ref={drag.listRef}>
           {rows.map((r, i) => (
-            <li key={r.key} className={r.hidden ? 'archived' : ''}>
+            <li key={r.key} data-index={i} className={`${r.hidden ? 'archived' : ''} ${drag.dragging === i ? 'is-dragged' : ''}`}>
               <div className="column-order">
+                {drag.grip(i, r.name)}
                 <button type="button" className="btn-ghost" aria-label={`Move ${r.name} left`} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
                 <button type="button" className="btn-ghost" aria-label={`Move ${r.name} right`} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>↓</button>
               </div>
